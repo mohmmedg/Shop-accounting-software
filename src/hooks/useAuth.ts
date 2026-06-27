@@ -6,7 +6,6 @@ import { initialEmployees } from '../data/mockData';
 
 const AUTH_KEY = 'store_current_user';
 
-// Listeners set to share auth state across all instances of useAuth hook
 const authListeners = new Set<(user: Employee | null) => void>();
 
 function updateGlobalUser(user: Employee | null) {
@@ -37,14 +36,15 @@ export function useAuth() {
     updateGlobalUser(user);
   };
 
-  const login = async (pinCode: string, employeeBarcode?: string) => {
+  const login = async (pinCode: string, employeeBarcode?: string, employeeId?: string) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-    // Development fallback when Supabase not configured
+    // Development fallback
     if (!supabaseUrl || !supabaseAnonKey) {
       const found = initialEmployees.find(emp =>
         emp.pin_code === pinCode &&
+        (employeeId ? emp.id === employeeId : true) &&
         (employeeBarcode ? emp.barcode === employeeBarcode : true) &&
         emp.is_active
       );
@@ -59,17 +59,14 @@ export function useAuth() {
     }
 
     try {
-      // Production: Secure Supabase Auth via PIN RPC
       const { data: creds, error: rpcError } = await supabase.rpc('get_employee_auth_credentials', {
         p_pin: pinCode || '',
-        p_barcode: employeeBarcode || ''
+        p_barcode: employeeBarcode || '',
+        p_employee_id: employeeId || null
       });
 
-      if (rpcError) {
-        throw rpcError;
-      }
+      if (rpcError) throw rpcError;
 
-      // If creds is empty or length is 0, login fails
       if (!creds || creds.length === 0) {
         toast.error('تعذر تسجيل الدخول');
         throw new Error('Invalid credentials');
@@ -83,22 +80,23 @@ export function useAuth() {
 
       const { email, password } = response;
 
-      // Standard Supabase Auth Login
       const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
         email: email || '',
         password: password || ''
       });
 
-      if (authError) {
-        throw authError;
-      }
+      if (authError) throw authError;
 
       const authUser = authResult.user;
-      if (!authUser) {
-        throw new Error('لم يتم إنشاء جلسة مصادقة صحيحة');
+      if (!authUser) throw new Error('لم يتم إنشاء جلسة مصادقة صحيحة');
+
+      // التحقق النهائي: auth user يجب أن يطابق الموظف المختار
+      if (employeeId && authUser.id !== employeeId) {
+        await supabase.auth.signOut();
+        toast.error('رمز PIN غير صحيح لهذا الموظف');
+        throw new Error('Invalid credentials');
       }
 
-      // Query the logged-in employee profile (which has pin_code masked as '****')
       const { data: empData, error: empError } = await supabase
         .from('employees')
         .select('*')
@@ -113,7 +111,6 @@ export function useAuth() {
       localStorage.setItem(AUTH_KEY, JSON.stringify(employee));
       updateGlobalUser(employee);
 
-      // Log login action
       try {
         await supabase.from('audit_logs').insert({
           employee_id: employee.id,

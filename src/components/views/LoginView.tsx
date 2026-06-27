@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { Employee } from '../types';
 import { toast } from 'sonner';
 import { initialEmployees } from '../data/mockData';

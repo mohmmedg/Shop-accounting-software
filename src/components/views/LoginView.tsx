@@ -1,243 +1,181 @@
-import { useState, useEffect } from 'react';
-import { Employee } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../hooks/useAuth';
+import { useEmployees } from '../../hooks/useEmployees';
+import { useSettings } from '../../hooks/useSettings';
+import { Lock, Eye, EyeOff, KeyRound, AlertCircle, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '../lib/supabase';
-import { initialEmployees } from '../data/mockData';
 
-const AUTH_KEY = 'store_current_user';
+export function LoginView() {
+  const { login } = useAuth();
+  const { employees, isLoading: loadingEmployees } = useEmployees();
+  const { settings } = useSettings();
 
-// Listeners set to share auth state across all instances of useAuth hook
-const authListeners = new Set<(user: Employee | null) => void>();
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [shouldShake, setShouldShake] = useState(false);
 
-function updateGlobalUser(user: Employee | null) {
-  for (const listener of authListeners) {
-    listener(user);
-  }
-}
-
-export function useAuth() {
-  const [currentUser, setCurrentUserState] = useState<Employee | null>(() => {
-    const saved = localStorage.getItem(AUTH_KEY);
-    return saved ? JSON.parse(saved) : null;
-  });
+  const barcodeBuffer = useRef('');
+  const lastKeyTime = useRef(0);
 
   useEffect(() => {
-    authListeners.add(setCurrentUserState);
-    return () => {
-      authListeners.delete(setCurrentUserState);
+    const activeEmployees = employees.filter(e => e.is_active);
+    if (activeEmployees.length > 0 && !selectedEmployeeId) {
+      setSelectedEmployeeId(activeEmployees[0].id);
+    }
+  }, [employees, selectedEmployeeId]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+      const now = Date.now();
+      if (now - lastKeyTime.current > 100) {
+        barcodeBuffer.current = '';
+      }
+      lastKeyTime.current = now;
+
+      if (e.key === 'Enter') {
+        if (barcodeBuffer.current.length > 2) {
+          const barcode = barcodeBuffer.current;
+          barcodeBuffer.current = '';
+          e.preventDefault();
+          const emp = employees.find(x => x.barcode === barcode && x.is_active);
+          if (emp) {
+            try {
+              setIsSubmitting(true);
+              await login(emp.pin_code, barcode, emp.id);
+            } catch (err) {
+              setShouldShake(true);
+              setTimeout(() => setShouldShake(false), 500);
+            } finally {
+              setIsSubmitting(false);
+            }
+          } else {
+            toast.error('بطاقة الموظف الممسوحة غير مسجلة أو غير نشطة');
+          }
+        }
+      } else if (e.key !== 'Shift') {
+        barcodeBuffer.current += e.key;
+      }
     };
-  }, []);
 
-  const setCurrentUser = (user: Employee | null) => {
-    if (user) {
-      localStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(AUTH_KEY);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [employees, login]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeId) {
+      toast.error('الرجاء اختيار الموظف أولاً');
+      return;
     }
-    updateGlobalUser(user);
-  };
-
-  const login = async (pinCode: string, employeeBarcode?: string, employeeId?: string) => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-    // Development fallback when Supabase not configured
-    if (!supabaseUrl || !supabaseAnonKey) {
-      const found = initialEmployees.find(emp =>
-        emp.pin_code === pinCode &&
-        (employeeId ? emp.id === employeeId : true) &&
-        (employeeBarcode ? emp.barcode === employeeBarcode : true) &&
-        emp.is_active
-      );
-      if (found) {
-        localStorage.setItem(AUTH_KEY, JSON.stringify(found));
-        updateGlobalUser(found);
-        toast.success(`مرحباً بك ${found.name} (وضع تجريبي)`);
-        return found;
-      }
-      toast.error('رمز المرور غير صحيح');
-      throw new Error('Invalid credentials');
+    if (pin.length < 4) {
+      toast.error('الرجاء إدخال رمز PIN (4 أرقام على الأقل)');
+      return;
     }
 
     try {
-      // Production: query employee directly by ID and verify PIN
-      if (employeeId) {
-        const { data: empData, error: empError } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('id', employeeId)
-          .eq('is_active', true)
-          .single();
+      setIsSubmitting(true);
+      const emp = employees.find(x => x.id === selectedEmployeeId);
+      if (!emp) throw new Error('الموظف غير موجود');
 
-        if (empError || !empData) {
-          toast.error('الموظف غير موجود أو غير نشط');
-          throw new Error('Invalid credentials');
-        }
-
-        const employee = empData as Employee;
-
-        // Verify PIN directly against the stored pin_code
-        // Since pin_code may be masked, use RPC for verification
-        const { data: creds, error: rpcError } = await supabase.rpc('get_employee_auth_credentials', {
-          p_pin: pinCode || '',
-          p_barcode: employeeBarcode || ''
-        });
-
-        if (rpcError) throw rpcError;
-
-        if (!creds || creds.length === 0) {
-          toast.error('رمز PIN غير صحيح');
-          throw new Error('Invalid credentials');
-        }
-
-        const response = creds[0];
-        if (response.success === false) {
-          toast.error(response.error_message || 'فشل تسجيل الدخول');
-          throw new Error('Invalid credentials');
-        }
-
-        // التحقق أن الموظف الذي يملك هذا PIN هو نفس الموظف المختار
-        const { email, password, employee_id: rpcEmployeeId } = response;
-
-        if (rpcEmployeeId && rpcEmployeeId !== employeeId) {
-          toast.error('رمز PIN غير صحيح لهذا الموظف');
-          throw new Error('Invalid credentials');
-        }
-
-        // Standard Supabase Auth Login
-        const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
-          email: email || '',
-          password: password || ''
-        });
-
-        if (authError) throw authError;
-
-        const authUser = authResult.user;
-        if (!authUser) throw new Error('لم يتم إنشاء جلسة مصادقة صحيحة');
-
-        // التحقق النهائي: الـ auth user يجب أن يطابق الموظف المختار
-        if (authUser.id !== employeeId) {
-          await supabase.auth.signOut();
-          toast.error('رمز PIN غير صحيح لهذا الموظف');
-          throw new Error('Invalid credentials');
-        }
-
-        // Query the logged-in employee profile
-        const { data: finalEmpData, error: finalEmpError } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
-
-        if (finalEmpError || !finalEmpData) {
-          throw finalEmpError || new Error('فشل تحميل الملف الشخصي للموظف');
-        }
-
-        const finalEmployee = finalEmpData as Employee;
-        localStorage.setItem(AUTH_KEY, JSON.stringify(finalEmployee));
-        updateGlobalUser(finalEmployee);
-
-        // Log login action
-        try {
-          await supabase.from('audit_logs').insert({
-            employee_id: finalEmployee.id,
-            employee_name: finalEmployee.name,
-            action_type: 'login',
-            entity_type: 'employee',
-            entity_id: finalEmployee.id,
-            entity_name: finalEmployee.name,
-            description: `تسجيل دخول ناجح للموظف: ${finalEmployee.name} بمنصب (${finalEmployee.position === 'admin' ? 'مدير عام' : finalEmployee.position === 'cashier' ? 'كاشير' : 'أمين مستودع'})`,
-          });
-        } catch (err) {
-          console.warn('Login audit log failed:', err);
-        }
-
-        toast.success(`مرحباً بك ${finalEmployee.name}`);
-        return finalEmployee;
-      }
-
-      // Fallback: barcode login (no employeeId provided)
-      const { data: creds, error: rpcError } = await supabase.rpc('get_employee_auth_credentials', {
-        p_pin: pinCode || '',
-        p_barcode: employeeBarcode || ''
-      });
-
-      if (rpcError) throw rpcError;
-
-      if (!creds || creds.length === 0) {
-        toast.error('تعذر تسجيل الدخول');
-        throw new Error('Invalid credentials');
-      }
-
-      const response = creds[0];
-      if (response.success === false) {
-        toast.error(response.error_message || 'فشل تسجيل الدخول');
-        throw new Error('Invalid credentials');
-      }
-
-      const { email, password } = response;
-
-      const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
-        email: email || '',
-        password: password || ''
-      });
-
-      if (authError) throw authError;
-
-      const authUser = authResult.user;
-      if (!authUser) throw new Error('لم يتم إنشاء جلسة مصادقة صحيحة');
-
-      const { data: empData, error: empError } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (empError || !empData) {
-        throw empError || new Error('فشل تحميل الملف الشخصي للموظف');
-      }
-
-      const employee = empData as Employee;
-      localStorage.setItem(AUTH_KEY, JSON.stringify(employee));
-      updateGlobalUser(employee);
-
-      try {
-        await supabase.from('audit_logs').insert({
-          employee_id: employee.id,
-          employee_name: employee.name,
-          action_type: 'login',
-          entity_type: 'employee',
-          entity_id: employee.id,
-          entity_name: employee.name,
-          description: `تسجيل دخول ناجح للموظف: ${employee.name} بمنصب (${employee.position === 'admin' ? 'مدير عام' : employee.position === 'cashier' ? 'كاشير' : 'أمين مستودع'})`,
-        });
-      } catch (err) {
-        console.warn('Login audit log failed:', err);
-      }
-
-      toast.success(`مرحباً بك ${employee.name}`);
-      return employee;
-    } catch (err: any) {
-      if (err.message !== 'Invalid credentials') {
-        toast.error(`خطأ أثناء تسجيل الدخول: ${err.message}`);
-      }
-      throw err;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      await supabase.auth.signOut();
+      // تمرير employeeId للتحقق من تطابق PIN مع الموظف المختار
+      await login(pin, emp.barcode, emp.id);
     } catch (err) {
-      console.warn('Supabase signout warning:', err);
+      setShouldShake(true);
+      setTimeout(() => setShouldShake(false), 500);
+    } finally {
+      setIsSubmitting(false);
     }
-    localStorage.removeItem(AUTH_KEY);
-    updateGlobalUser(null);
-    toast.success('تم تسجيل الخروج بنجاح');
   };
 
-  const isAuthenticated = currentUser !== null;
-  const isAdmin = currentUser?.position === 'admin';
+  const activeEmployees = employees.filter(e => e.is_active);
 
-  return { currentUser, login, logout, isAuthenticated, isAdmin, setCurrentUser };
+  return (
+    <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col justify-center items-center px-4 relative overflow-hidden" dir="rtl">
+      
+      <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl -z-10" />
+      <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl -z-10" />
+
+      <div className={`w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-8 ${shouldShake ? 'animate-bounce' : ''}`}>
+        
+        <div className="text-center space-y-2">
+          <div className="inline-flex p-4 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 mb-2">
+            <ShoppingBag className="w-8 h-8" />
+          </div>
+          <h1 className="text-2xl font-black bg-gradient-to-l from-indigo-300 to-indigo-500 bg-clip-text text-transparent">
+            {settings.store_name || 'ALkhal'}
+          </h1>
+          <p className="text-xs text-slate-500 font-semibold">بوابة التاجر الدمشقي لإدارة الأعمال الذكية</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 block">اختر حساب الموظف</label>
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              className="w-full bg-slate-800/80 border border-slate-700/80 rounded-xl px-4 py-3 text-slate-100 text-sm font-bold focus:outline-none focus:border-indigo-500 transition cursor-pointer"
+              disabled={loadingEmployees || isSubmitting}
+            >
+              {loadingEmployees ? (
+                <option>جاري تحميل قائمة الموظفين...</option>
+              ) : activeEmployees.length === 0 ? (
+                <option>لا يوجد موظفين مسجلين</option>
+              ) : (
+                activeEmployees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.position === 'admin' ? 'مدير عام' : emp.position === 'cashier' ? 'كاشير مبيعات' : 'أمين مستودع'})
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-400 block">رمز المرور PIN</label>
+            <div className="relative">
+              <input
+                type={showPin ? 'text' : 'password'}
+                inputMode="numeric"
+                maxLength={6}
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                placeholder="••••"
+                disabled={isSubmitting}
+                className="w-full bg-slate-800/80 border border-slate-700/80 rounded-xl px-10 py-3 text-slate-100 text-center font-bold tracking-[0.5em] text-lg focus:outline-none focus:border-indigo-500 transition"
+              />
+              <div className="absolute top-1/2 -translate-y-1/2 right-3.5 text-slate-500">
+                <Lock className="w-4 h-4" />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPin(!showPin)}
+                className="absolute top-1/2 -translate-y-1/2 left-3.5 text-slate-500 hover:text-slate-300 transition"
+              >
+                {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || loadingEmployees || activeEmployees.length === 0}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-extrabold text-sm transition shadow-lg shadow-indigo-600/10 flex justify-center items-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            <KeyRound className="w-4 h-4" />
+            <span>{isSubmitting ? 'جاري التحقق...' : 'تسجيل الدخول'}</span>
+          </button>
+          
+        </form>
+
+        <div className="pt-2 border-t border-slate-800/60 flex items-center justify-center gap-2 text-[10px] text-slate-500 font-bold text-center">
+          <AlertCircle className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+          <span>يدعم مسح بطاقة الموظف عبر الباركود مباشرة للدخول التلقائي</span>
+        </div>
+
+      </div>
+    </div>
+  );
 }

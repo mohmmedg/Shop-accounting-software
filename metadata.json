@@ -1,0 +1,6 @@
+{
+  "name": "ALkhal",
+  "description": "نظام مبيعات ونقاط بيع متكامل ومتجاوب مع خيارات البيع بالوزن والكميات",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

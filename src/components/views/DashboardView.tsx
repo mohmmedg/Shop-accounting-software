@@ -69,16 +69,12 @@ export const DashboardView: React.FC = () => {
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
     e.preventDefault();
     if (draggedIndex === null) return;
-    
     const newOrder = [...cardOrder];
     const draggedItem = newOrder[draggedIndex];
-    
     newOrder.splice(draggedIndex, 1);
     newOrder.splice(targetIndex, 0, draggedItem);
-    
     setCardOrder(newOrder);
     localStorage.setItem('dashboard_card_order', JSON.stringify(newOrder));
-    
     setDraggedIndex(null);
     setDragOverIndex(null);
   };
@@ -88,29 +84,22 @@ export const DashboardView: React.FC = () => {
     setDragOverIndex(null);
   };
 
-  // 1. Calculate today's stats based on loaded live data
   const stats = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Today's invoices
     const todaySalesUsd = todayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
     const todaySalesSyp = todayInvoices.reduce((acc, inv) => acc + Number(inv.total_syp), 0);
 
-    // Yesterday's invoices
     const yesterdayInvoices = invoices.filter(inv => inv.sale_date.startsWith(yesterday));
     const yesterdaySalesUsd = yesterdayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
 
-    // Sales change percentage
-    const salesChange = yesterdaySalesUsd > 0 
-      ? ((todaySalesUsd - yesterdaySalesUsd) / yesterdaySalesUsd) * 100 
-      : 12.4; // positive mock trend if yesterday is 0
+    const salesChange = yesterdaySalesUsd > 0
+      ? ((todaySalesUsd - yesterdaySalesUsd) / yesterdaySalesUsd) * 100
+      : 12.4;
 
-    // Profit calculation: exact dynamic profit calculation from invoice details
     const todayProfitUsd = todayInvoices.reduce((acc, inv) => {
-      if (inv.profit_usd !== undefined && inv.profit_usd !== null) {
-        return acc + Number(inv.profit_usd);
-      }
+      if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
       const itemsProfit = inv.items?.reduce((sum, item) => {
         const cost = item.cost_usd || 0;
         return sum + (item.price_usd - cost) * item.quantity;
@@ -120,9 +109,7 @@ export const DashboardView: React.FC = () => {
     }, 0);
 
     const todayProfitSyp = todayInvoices.reduce((acc, inv) => {
-      if (inv.profit_syp !== undefined && inv.profit_syp !== null) {
-        return acc + Number(inv.profit_syp);
-      }
+      if (inv.profit_syp !== undefined && inv.profit_syp !== null) return acc + Number(inv.profit_syp);
       const profitUsd = inv.profit_usd || inv.items?.reduce((sum, item) => {
         const cost = item.cost_usd || 0;
         return sum + (item.price_usd - cost) * item.quantity;
@@ -131,9 +118,7 @@ export const DashboardView: React.FC = () => {
     }, 0);
 
     const yesterdayProfitUsd = yesterdayInvoices.reduce((acc, inv) => {
-      if (inv.profit_usd !== undefined && inv.profit_usd !== null) {
-        return acc + Number(inv.profit_usd);
-      }
+      if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
       const itemsProfit = inv.items?.reduce((sum, item) => {
         const cost = item.cost_usd || 0;
         return sum + (item.price_usd - cost) * item.quantity;
@@ -147,47 +132,30 @@ export const DashboardView: React.FC = () => {
       : 5.6;
 
     const lowStockCount = products.filter(p => p.quantity <= p.warning_limit).length;
-
     const totalStockValueUsd = products.reduce((acc, p) => acc + ((p.quantity || 0) * (p.cost_usd || 0)), 0);
     const totalStockValueSyp = Math.round(totalStockValueUsd * settings.usd_to_syp_rate);
     const totalQtyInStock = products.reduce((acc, p) => acc + (p.quantity || 0), 0);
 
     return {
-      todaySalesUsd,
-      todaySalesSyp,
-      salesChange,
-      todayProfitUsd,
-      todayProfitSyp,
-      profitChange,
+      todaySalesUsd, todaySalesSyp, salesChange,
+      todayProfitUsd, todayProfitSyp, profitChange,
       todayInvoicesCount: todayInvoices.length,
-      lowStockCount,
-      totalStockValueUsd,
-      totalStockValueSyp,
-      totalQtyInStock
+      lowStockCount, totalStockValueUsd, totalStockValueSyp, totalQtyInStock
     };
   }, [invoices, todayInvoices, products, settings]);
 
-  // 2. Prepare charts data for last 7 days
   const chartData = useMemo(() => {
     const dates = [];
     const arabicDays = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
-    
-    // Generate dates for past 7 days
     for (let i = 6; i >= 0; i--) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-      dates.push({
-        dateStr: d.toISOString().split('T')[0],
-        dayName: arabicDays[d.getDay()]
-      });
+      dates.push({ dateStr: d.toISOString().split('T')[0], dayName: arabicDays[d.getDay()] });
     }
-
     return dates.map(item => {
       const dayInvoices = invoices.filter(inv => inv.sale_date.startsWith(item.dateStr));
       const totalSalesUsd = dayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
       const totalProfitUsd = dayInvoices.reduce((acc, inv) => {
-        if (inv.profit_usd !== undefined && inv.profit_usd !== null) {
-          return acc + Number(inv.profit_usd);
-        }
+        if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
         const itemsProfit = inv.items?.reduce((sum, item) => {
           const cost = item.cost_usd || 0;
           return sum + (item.price_usd - cost) * item.quantity;
@@ -195,7 +163,6 @@ export const DashboardView: React.FC = () => {
         if (itemsProfit && itemsProfit > 0) return acc + itemsProfit;
         return acc + Number(inv.total_usd) * 0.28;
       }, 0);
-
       return {
         name: item.dayName,
         date: item.dateStr.slice(5),
@@ -207,13 +174,8 @@ export const DashboardView: React.FC = () => {
     });
   }, [invoices, settings]);
 
-  const lowStockProducts = useMemo(() => {
-    return products.filter(p => p.quantity <= p.warning_limit).slice(0, 5);
-  }, [products]);
-
-  const recentInvoices = useMemo(() => {
-    return invoices.slice(0, 5);
-  }, [invoices]);
+  const lowStockProducts = useMemo(() => products.filter(p => p.quantity <= p.warning_limit).slice(0, 5), [products]);
+  const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);
 
   const renderCard = (cardId: string, index: number) => {
     const isDragging = index === draggedIndex;
@@ -228,14 +190,14 @@ export const DashboardView: React.FC = () => {
       onDragEnd: handleDragEnd,
     };
 
-    const commonClasses = `relative bg-slate-900 rounded-2xl p-5 shadow-xl flex items-center gap-4 border transition-all duration-200 cursor-grab active:cursor-grabbing group select-none ${
-      isDragging ? 'opacity-40 scale-95 border-indigo-500/50 bg-slate-950' : 
+    const commonClasses = `relative bg-slate-900 rounded-2xl p-4 shadow-xl flex items-center gap-3 border transition-all duration-200 cursor-grab active:cursor-grabbing group select-none ${
+      isDragging ? 'opacity-40 scale-95 border-indigo-500/50 bg-slate-950' :
       isDragOver ? 'border-indigo-500 scale-[1.02] bg-slate-850 shadow-indigo-500/10 shadow-lg' : 'border-slate-800 hover:border-slate-700 hover:shadow-slate-950'
     }`;
 
     const dragHandle = (
       <div className="text-slate-600 group-hover:text-indigo-400 transition cursor-grab p-1 rounded-lg hover:bg-slate-800 shrink-0 self-center">
-        <GripVertical className="w-4 h-4" />
+        <GripVertical className="w-3.5 h-3.5" />
       </div>
     );
 
@@ -244,19 +206,19 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="stock_valuation" {...dragProps} className={`${commonClasses} border-indigo-500/20 bg-gradient-to-br from-slate-900 to-indigo-950/20`}>
             {dragHandle}
-            <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 shrink-0">
-              <PackageCheck className="w-6 h-6 animate-pulse" />
+            <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400 shrink-0">
+              <PackageCheck className="w-5 h-5" />
             </div>
-            <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-[10px] font-bold block mb-1 truncate">جرد قيمة بضاعة المخزون (برأس المال)</span>
-              <span className="text-lg font-extrabold text-emerald-400 block leading-tight font-mono truncate">
-                ${stats.totalStockValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">جرد قيمة البضاعة</span>
+              <span className="text-base font-extrabold text-emerald-400 block leading-tight font-mono truncate">
+                ${stats.totalStockValueUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </span>
-              <span className="text-[10px] font-bold text-amber-500 block mt-0.5 font-mono truncate">
-                ≈ {stats.totalStockValueSyp.toLocaleString()} ل.س
+              <span className="text-[9px] font-bold text-amber-500 block mt-0.5 font-mono truncate">
+                ≈ {(stats.totalStockValueSyp / 1000).toFixed(0)}k ل.س
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block mt-1 truncate">
-                إجمالي المخزون: {stats.totalQtyInStock.toLocaleString()} وحدة
+              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">
+                {stats.totalQtyInStock.toLocaleString()} وحدة
               </span>
             </div>
           </div>
@@ -266,20 +228,20 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="daily_sales" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <DollarSign className="w-6 h-6" />
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <DollarSign className="w-5 h-5" />
             </div>
-            <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-[10px] font-bold block mb-1 truncate">مبيعات اليوم</span>
-              <span className="text-lg font-extrabold text-slate-100 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">مبيعات اليوم</span>
+              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
                 ${stats.todaySalesUsd.toFixed(2)}
               </span>
-              <span className="text-[10px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
-                ≈ {stats.todaySalesSyp.toLocaleString()} ل.س
+              <span className="text-[9px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
+                ≈ {(stats.todaySalesSyp / 1000).toFixed(0)}k ل.س
               </span>
-              <span className="text-[9px] font-black text-emerald-400 mt-1 flex items-center gap-0.5 truncate">
-                <TrendingUp className="w-3 h-3" />
-                <span>+{stats.salesChange.toFixed(1)}% نمو اليوم</span>
+              <span className="text-[9px] font-black text-emerald-400 mt-0.5 flex items-center gap-0.5 truncate">
+                <TrendingUp className="w-3 h-3 shrink-0" />
+                <span>+{stats.salesChange.toFixed(1)}%</span>
               </span>
             </div>
           </div>
@@ -289,20 +251,20 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="daily_profits" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <Coins className="w-6 h-6" />
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <Coins className="w-5 h-5" />
             </div>
-            <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-[10px] font-bold block mb-1 truncate">صافي الأرباح المقدرة اليوم</span>
-              <span className="text-lg font-extrabold text-slate-100 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">صافي الأرباح اليوم</span>
+              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
                 ${stats.todayProfitUsd.toFixed(2)}
               </span>
-              <span className="text-[10px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
-                ≈ {stats.todayProfitSyp.toLocaleString()} ل.س
+              <span className="text-[9px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
+                ≈ {(stats.todayProfitSyp / 1000).toFixed(0)}k ل.س
               </span>
-              <span className="text-[9px] font-black text-emerald-400 mt-1 flex items-center gap-0.5 truncate">
-                <TrendingUp className="w-3 h-3" />
-                <span>+{stats.profitChange.toFixed(1)}% نمو الفروق</span>
+              <span className="text-[9px] font-black text-emerald-400 mt-0.5 flex items-center gap-0.5 truncate">
+                <TrendingUp className="w-3 h-3 shrink-0" />
+                <span>+{stats.profitChange.toFixed(1)}%</span>
               </span>
             </div>
           </div>
@@ -312,15 +274,15 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="invoices_count" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <ShoppingCart className="w-6 h-6" />
+            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <ShoppingCart className="w-5 h-5" />
             </div>
-            <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-[10px] font-bold block mb-1 truncate">فواتير مبيعات اليوم</span>
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">فواتير اليوم</span>
               <span className="text-xl font-black text-slate-100 block font-mono truncate">
                 {stats.todayInvoicesCount}
               </span>
-              <span className="text-[10px] text-slate-400 font-bold block mt-0.5 truncate">عمليات بيع ناجحة</span>
+              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">عمليات بيع</span>
             </div>
           </div>
         );
@@ -329,15 +291,15 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="low_stock" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-3 bg-rose-500/10 rounded-xl text-rose-400 shrink-0">
-              <AlertTriangle className="w-6 h-6" />
+            <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-400 shrink-0">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-[10px] font-bold block mb-1 truncate">تنبيهات المخزن عاجلة</span>
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">تنبيهات المخزن</span>
               <span className={`text-xl font-black block font-mono truncate ${stats.lowStockCount > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-100'}`}>
                 {stats.lowStockCount}
               </span>
-              <span className="text-[10px] text-slate-400 font-bold block mt-0.5 truncate">أصناف تحت خط الأمان</span>
+              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">أصناف منخفضة</span>
             </div>
           </div>
         );
@@ -353,7 +315,7 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="space-y-6 text-right" dir="rtl" id="dashboard-container">
-      
+
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-950 rounded-2xl p-6 border border-indigo-500/10 text-white shadow-2xl" id="welcome-banner">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -382,7 +344,7 @@ export const DashboardView: React.FC = () => {
         </div>
       )}
 
-      {/* Stats Section Header with Reset */}
+      {/* Stats Section Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-950/40 p-4 rounded-2xl border border-slate-850/60" id="stats-section-header">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-black text-slate-300">📊 الإحصائيات وبطاقات المراقبة السريعة</h2>
@@ -405,8 +367,8 @@ export const DashboardView: React.FC = () => {
         )}
       </div>
 
-      {/* Stats Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" id="stats-cards-grid">
+      {/* Stats Cards — responsive grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4" id="stats-cards-grid">
         {cardOrder.map((cardId, idx) => renderCard(cardId, idx))}
       </div>
 
@@ -443,8 +405,6 @@ export const DashboardView: React.FC = () => {
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="charts-grid">
-        
-        {/* LineChart: Sales */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
           <div className="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
             <h3 className="text-xs font-black text-slate-100">تحليل مبيعات الـ 7 أيام الماضية</h3>
@@ -465,7 +425,6 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* BarChart: Profits */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
           <div className="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
             <h3 className="text-xs font-black text-slate-100">تحليل الأرباح الصافية للـ 7 أيام الماضية</h3>
@@ -487,15 +446,13 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Lists Row: Low Stock & Recent Sales */}
+      {/* Lists Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="dashboard-lists-grid">
-        
-        {/* Low Stock */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl" id="dashboard-low-stock">
           <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
             <h3 className="text-xs font-black text-slate-100 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-500" />
-              تنبيهات المخزون المتدني بالمخازن
+              تنبيهات المخزون المتدني
             </h3>
             <span className="text-[10px] text-slate-500 font-bold">آخر 5 سلع</span>
           </div>
@@ -503,14 +460,14 @@ export const DashboardView: React.FC = () => {
             {lowStockProducts.length === 0 ? (
               <div className="text-center py-8 text-slate-500 font-bold">
                 <PackageCheck className="w-12 h-12 mx-auto opacity-50 mb-2 text-indigo-400" />
-                جميع الكميات متوفرة بمستويات جيدة ومطابقة!
+                جميع الكميات متوفرة بمستويات جيدة!
               </div>
             ) : (
               <table className="w-full text-right text-xs">
                 <thead>
                   <tr className="border-b border-slate-850 text-slate-500 font-bold">
                     <th className="pb-2">السلعة</th>
-                    <th className="pb-2 text-center">الكمية الحالية</th>
+                    <th className="pb-2 text-center">الكمية</th>
                     <th className="pb-2 text-center">الحد الآمن</th>
                     <th className="pb-2 text-left">الحالة</th>
                   </tr>
@@ -527,7 +484,7 @@ export const DashboardView: React.FC = () => {
                       <td className="py-2.5 text-center text-slate-500 font-mono">{p.warning_limit}</td>
                       <td className="py-2.5 text-left">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${p.quantity === 0 ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                          {p.quantity === 0 ? 'نفذ كلياً' : 'منخفض'}
+                          {p.quantity === 0 ? 'نفذ' : 'منخفض'}
                         </span>
                       </td>
                     </tr>
@@ -538,12 +495,11 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Recent Invoices */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl" id="dashboard-recent-invoices">
           <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-800">
             <h3 className="text-xs font-black text-slate-100 flex items-center gap-2">
               <ShoppingCart className="w-4 h-4 text-indigo-400" />
-              آخر مبيعات الفواتير الصادرة
+              آخر الفواتير الصادرة
             </h3>
           </div>
           <div className="overflow-x-auto">
@@ -555,8 +511,8 @@ export const DashboardView: React.FC = () => {
                   <tr className="border-b border-slate-850 text-slate-500 font-bold">
                     <th className="pb-2">رقم الفاتورة</th>
                     <th className="pb-2 text-center">العميل</th>
-                    <th className="pb-2 text-center">المجموع الكلي</th>
-                    <th className="pb-2 text-left">طريقة الدفع</th>
+                    <th className="pb-2 text-center">المجموع</th>
+                    <th className="pb-2 text-left">الدفع</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/40 font-semibold text-slate-300">
@@ -583,7 +539,6 @@ export const DashboardView: React.FC = () => {
             )}
           </div>
         </div>
-
       </div>
 
     </div>

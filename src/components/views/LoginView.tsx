@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Employee } from '../types';
 import { toast } from 'sonner';
-import { initialEmployees } from '../data/mockData';
 
 const AUTH_KEY = 'store_current_user';
 

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useEmployees } from '../../hooks/useEmployees';
+import { useLoginEmployees } from '../../hooks/useLoginEmployees';
 import { useSettings } from '../../hooks/useSettings';
 import { Lock, Eye, EyeOff, KeyRound, AlertCircle, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function LoginView() {
   const { login } = useAuth();
-  const { employees, isLoading: loadingEmployees } = useEmployees();
+  const { employees, isLoading: loadingEmployees } = useLoginEmployees();
   const { settings } = useSettings();
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -43,7 +43,9 @@ export function LoginView() {
           if (emp) {
             try {
               setIsSubmitting(true);
-              await login(emp.pin_code, barcode, emp.id);
+              // لا نُرسل pin_code من العميل — لم يعد متوفراً في القائمة الآمنة.
+              // الخادم يتحقق من صحة الدخول بالباركود فقط عبر get_employee_auth_credentials.
+              await login('', barcode, emp.id);
             } catch (err) {
               setShouldShake(true);
               setTimeout(() => setShouldShake(false), 500);
@@ -80,7 +82,7 @@ export function LoginView() {
       if (!emp) throw new Error('الموظف غير موجود');
 
       // تمرير employeeId للتحقق من تطابق PIN مع الموظف المختار
-      await login(pin, emp.barcode, emp.id);
+      await login(pin, emp.barcode ?? undefined, emp.id);
     } catch (err) {
       setShouldShake(true);
       setTimeout(() => setShouldShake(false), 500);
@@ -93,12 +95,12 @@ export function LoginView() {
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col justify-center items-center px-4 relative overflow-hidden" dir="rtl">
-      
+
       <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl -z-10" />
       <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl -z-10" />
 
       <div className={`w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-8 ${shouldShake ? 'animate-bounce' : ''}`}>
-        
+
         <div className="text-center space-y-2">
           <div className="inline-flex p-4 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 mb-2">
             <ShoppingBag className="w-8 h-8" />
@@ -110,7 +112,7 @@ export function LoginView() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          
+
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 block">اختر حساب الموظف</label>
             <select
@@ -167,7 +169,7 @@ export function LoginView() {
             <KeyRound className="w-4 h-4" />
             <span>{isSubmitting ? 'جاري التحقق...' : 'تسجيل الدخول'}</span>
           </button>
-          
+
         </form>
 
         <div className="pt-2 border-t border-slate-800/60 flex items-center justify-center gap-2 text-[10px] text-slate-500 font-bold text-center">

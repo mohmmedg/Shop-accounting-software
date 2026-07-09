@@ -3,11 +3,12 @@ import { supabase } from '../lib/supabase';
 import { Settings } from '../types';
 import { toast } from 'sonner';
 
-export const initialSettings: Settings = {
-  store_name: 'ALkhal',
-  store_phone: '+963 11 2233445',
-  store_address: 'دمشق - الحريقة - شارع التجارة',
-  usd_to_syp_rate: 15000,
+// قيمة افتراضية للعرض فقط عند عدم وجود اتصال Supabase (تطوير محلي) — لا تُكتب في DB أبداً تلقائياً
+const emptySettings: Settings = {
+  store_name: '',
+  store_phone: '',
+  store_address: '',
+  usd_to_syp_rate: 0,
   default_warning_limit: 10,
   tax_rate_percent: 0,
 };
@@ -22,44 +23,23 @@ export function useSettings() {
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseAnonKey) {
-        return initialSettings as Settings & { id: string };
+        return emptySettings as Settings & { id: string };
       }
 
-      try {
-        const { data, error } = await supabase
-          .from('settings')
-          .select('*')
-          .limit(1);
+      const { data, error } = await supabase.from('settings').select('*').limit(1);
 
-        if (error) {
-          console.warn('Supabase settings query error:', error.message);
-          return initialSettings as Settings & { id: string };
-        }
-
-        if (!data || data.length === 0) {
-          try {
-            // Table is empty, seed initial settings
-            const { data: inserted, error: insertError } = await supabase
-              .from('settings')
-              .insert([initialSettings])
-              .select()
-              .single();
-
-            if (insertError) throw insertError;
-            return inserted as Settings & { id: string };
-          } catch (seedErr) {
-            console.warn('Failed to seed settings, returning mock', seedErr);
-            return initialSettings as Settings & { id: string };
-          }
-        }
-
-        return data[0] as Settings & { id: string };
-      } catch (err) {
-        console.warn('useSettings exception:', err);
-        return initialSettings as Settings & { id: string };
+      if (error) {
+        throw new Error(`فشل تحميل الإعدادات: ${error.message}`);
       }
+
+      if (!data || data.length === 0) {
+        // لا إدراج تلقائي — نُرجع قيماً فارغة، والمستخدم يحفظها يدوياً من شاشة الإعدادات
+        return emptySettings as Settings & { id: string };
+      }
+
+      return data[0] as Settings & { id: string };
     },
-    staleTime: 1000 * 60 * 60, // 1 hour stale time
+    staleTime: 1000 * 60 * 60,
   });
 
   const updateSettings = useMutation({
@@ -70,12 +50,7 @@ export function useSettings() {
         return newSettings;
       }
 
-      // Get current row ID
-      const { data: existing } = await supabase
-        .from('settings')
-        .select('id')
-        .limit(1);
-
+      const { data: existing } = await supabase.from('settings').select('id').limit(1);
       const existingId = existing?.[0]?.id;
 
       if (existingId) {
@@ -96,7 +71,6 @@ export function useSettings() {
         if (error) throw error;
         return data as Settings;
       } else {
-        // No row — insert
         const { data, error } = await supabase
           .from('settings')
           .insert([{
@@ -115,8 +89,6 @@ export function useSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-
-      // Log action
       try {
         const savedUserStr = localStorage.getItem('store_current_user');
         const currentUser = savedUserStr ? JSON.parse(savedUserStr) : null;
@@ -132,7 +104,6 @@ export function useSettings() {
       } catch (err) {
         console.warn('Settings audit log failed:', err);
       }
-
       toast.success('تم حفظ الإعدادات بنجاح');
     },
     onError: (err: any) => {
@@ -141,7 +112,7 @@ export function useSettings() {
   });
 
   return {
-    settings: settingsQuery.data ?? initialSettings,
+    settings: settingsQuery.data ?? emptySettings,
     isLoading: settingsQuery.isLoading,
     updateSettings: updateSettings.mutateAsync,
     isUpdating: updateSettings.isPending,

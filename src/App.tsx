@@ -107,57 +107,57 @@ function UserPinPanel({
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2">
+    <div className="flex items-center gap-2 px-3 py-2 min-w-0 overflow-hidden">
       <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-xs font-black shrink-0 text-white">
         {currentUser.name?.charAt(0) || 'م'}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         <p className="text-xs font-bold text-slate-300 truncate">{currentUser.name}</p>
         <p className="text-[10px] text-slate-500">{currentUser.position === 'admin' ? 'مدير' : 'موظف'}</p>
 
         {editing ? (
-          <div className="flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-1 mt-1 min-w-0">
             <input
               type="text"
               inputMode="numeric"
               maxLength={6}
               value={pinDraft}
               onChange={(e) => setPinDraft(e.target.value.replace(/\D/g, ''))}
-              className="w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+              className="w-14 min-w-0 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
               autoFocus
             />
             <button
               onClick={savePin}
               disabled={saving}
-              className="text-emerald-400 hover:text-emerald-300 cursor-pointer p-0.5 disabled:opacity-50"
+              className="text-emerald-400 hover:text-emerald-300 cursor-pointer p-0.5 disabled:opacity-50 shrink-0"
               title="حفظ"
             >
               <Check className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={cancelEdit}
-              className="text-slate-500 hover:text-red-400 cursor-pointer p-0.5"
+              className="text-slate-500 hover:text-red-400 cursor-pointer p-0.5 shrink-0"
               title="إلغاء"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-1 mt-0.5">
-            <span className="text-[10px] font-bold text-slate-600">PIN:</span>
-            <span className="text-[10px] font-mono text-indigo-400 tracking-widest">
+          <div className="flex items-center gap-1 mt-0.5 min-w-0">
+            <span className="text-[10px] font-bold text-slate-600 shrink-0">PIN:</span>
+            <span className="text-[10px] font-mono text-indigo-400 truncate">
               {showPin ? currentUser.pin_code : '••••'}
             </span>
             <button
               onClick={() => setShowPin(!showPin)}
-              className="text-slate-500 hover:text-slate-300 cursor-pointer p-0.5"
+              className="text-slate-500 hover:text-slate-300 cursor-pointer p-0.5 shrink-0"
               title={showPin ? 'إخفاء الرمز' : 'إظهار الرمز'}
             >
               {showPin ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
             </button>
             <button
               onClick={startEdit}
-              className="text-slate-500 hover:text-indigo-400 cursor-pointer p-0.5"
+              className="text-slate-500 hover:text-indigo-400 cursor-pointer p-0.5 shrink-0"
               title="تعديل الرمز"
             >
               <Pencil className="w-3 h-3" />
@@ -165,7 +165,7 @@ function UserPinPanel({
           </div>
         )}
       </div>
-      <button onClick={onLogout} className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1 self-start">
+      <button onClick={onLogout} className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1 self-start shrink-0">
         <Unlock className="w-4 h-4" />
       </button>
     </div>
@@ -384,7 +384,7 @@ export default function App() {
       <div className="flex-1 max-w-7xl w-full mx-auto flex flex-col lg:flex-row relative">
         
         {/* Desktop sidebar — fixed left/right panel */}
-        <nav className="hidden lg:flex flex-col w-64 shrink-0 bg-slate-900 border-l border-slate-800 h-[calc(100vh-68px)] sticky top-[68px] overflow-y-auto">
+        <nav className="hidden lg:flex flex-col w-64 min-w-0 shrink-0 bg-slate-900 border-l border-slate-800 h-[calc(100vh-68px)] sticky top-[68px] overflow-y-auto">
           {/* Store info */}
           <div className="p-4 border-b border-slate-800">
             <h1 className="text-base font-black bg-gradient-to-l from-blue-400 to-indigo-500 bg-clip-text text-transparent">

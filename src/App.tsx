@@ -396,6 +396,28 @@ export default function App() {
             })}
           </nav>
 
+          {/* Mobile: user info + logout (mirrors desktop sidebar) */}
+          <div className="p-3 border-t border-slate-800 bg-slate-950/20">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-xs font-black shrink-0 text-white">
+                {currentUser?.name?.charAt(0) || 'م'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-300 truncate">{currentUser?.name}</p>
+                <p className="text-[10px] text-slate-500">{currentUser?.position === 'admin' ? 'مدير' : 'موظف'}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  logout();
+                }}
+                className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1"
+              >
+                <Unlock className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
           {/* Sidebar bottom signature */}
           <div className="p-4 border-t border-slate-800 text-[10px] text-slate-600 text-center font-semibold">
             <span>مخازن الشام الكبرى © 2026</span>

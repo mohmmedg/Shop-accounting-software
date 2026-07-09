@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Supplier } from '../types';
 import { toast } from 'sonner';
-import { initialSuppliers } from '../data/mockData';
 
 export function useSuppliers() {
   const queryClient = useQueryClient();
@@ -12,25 +11,14 @@ export function useSuppliers() {
     queryFn: async () => {
       const hasSupabaseCreds = import.meta.env?.VITE_SUPABASE_URL && import.meta.env?.VITE_SUPABASE_ANON_KEY;
       if (!hasSupabaseCreds) {
-        return initialSuppliers;
+        return [] as Supplier[];
       }
-      try {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .select('*')
-          .order('name');
-        if (error) {
-          console.warn('Supabase suppliers query error:', error.message);
-          return initialSuppliers;
-        }
-        if (!data || data.length === 0) {
-          return initialSuppliers;
-        }
-        return data as Supplier[];
-      } catch (err) {
-        console.warn('useSuppliers exception:', err);
-        return initialSuppliers;
-      }
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .order('name');
+      if (error) throw new Error(`فشل تحميل الموردين: ${error.message}`);
+      return (data ?? []) as Supplier[];
     },
     staleTime: 1000 * 60 * 5,
   });

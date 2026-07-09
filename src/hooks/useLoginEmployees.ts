@@ -16,15 +16,12 @@ export function useLoginEmployees() {
       const hasSupabaseCreds = import.meta.env?.VITE_SUPABASE_URL && import.meta.env?.VITE_SUPABASE_ANON_KEY;
 
       if (!hasSupabaseCreds) {
-        // وضع تطوير محلي فقط — لا اتصال بـ Supabase على الإطلاق
-        const { initialEmployees } = await import('../data/mockData');
-        return initialEmployees.filter(e => e.is_active);
+        return [] as LoginEmployee[];
       }
 
       const { data, error } = await supabase.rpc('get_login_employees');
 
       if (error) {
-        // لا يوجد تراجع صامت لبيانات وهمية هنا — الخطأ يجب أن يظهر
         throw new Error(`تعذر تحميل قائمة الموظفين: ${error.message}`);
       }
 

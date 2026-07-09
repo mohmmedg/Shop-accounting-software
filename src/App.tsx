@@ -30,7 +30,11 @@ import {
   Percent,
   History,
   ClipboardCheck,
-  Shield
+  Shield,
+  Eye,
+  EyeOff,
+  Pencil,
+  Check
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -53,12 +57,125 @@ import { CashRegisterView } from './components/views/CashRegisterView';
 import { AuditView } from './components/views/AuditView';
 import { SalesHistoryView } from './components/views/SalesHistoryView';
 import { AdminView } from './components/views/AdminView';
-import { ROLE_PERMISSIONS } from './types';
+import { ROLE_PERMISSIONS, Employee } from './types';
+
+// Small reusable panel: shows current user's avatar, name, position, PIN code (viewable/editable) and a logout button.
+function UserPinPanel({
+  currentUser,
+  onLogout,
+  updateEmployee,
+  setCurrentUser,
+}: {
+  currentUser: Employee | null;
+  onLogout: () => void;
+  updateEmployee: (employee: Employee) => Promise<any>;
+  setCurrentUser: (user: Employee | null) => void;
+}) {
+  const [showPin, setShowPin] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [pinDraft, setPinDraft] = useState(currentUser?.pin_code || '');
+  const [saving, setSaving] = useState(false);
+
+  if (!currentUser) return null;
+
+  const startEdit = () => {
+    setPinDraft(currentUser.pin_code || '');
+    setEditing(true);
+    setShowPin(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setPinDraft(currentUser.pin_code || '');
+  };
+
+  const savePin = async () => {
+    const trimmed = pinDraft.trim();
+    if (!/^\d{4,6}$/.test(trimmed)) {
+      toast.error('رمز الدخول (PIN) يجب أن يتكوّن من 4 إلى 6 أرقام');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = { ...currentUser, pin_code: trimmed };
+      await updateEmployee(updated);
+      setCurrentUser(updated);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-2">
+      <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-xs font-black shrink-0 text-white">
+        {currentUser.name?.charAt(0) || 'م'}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-slate-300 truncate">{currentUser.name}</p>
+        <p className="text-[10px] text-slate-500">{currentUser.position === 'admin' ? 'مدير' : 'موظف'}</p>
+
+        {editing ? (
+          <div className="flex items-center gap-1 mt-1">
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={pinDraft}
+              onChange={(e) => setPinDraft(e.target.value.replace(/\D/g, ''))}
+              className="w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
+              autoFocus
+            />
+            <button
+              onClick={savePin}
+              disabled={saving}
+              className="text-emerald-400 hover:text-emerald-300 cursor-pointer p-0.5 disabled:opacity-50"
+              title="حفظ"
+            >
+              <Check className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="text-slate-500 hover:text-red-400 cursor-pointer p-0.5"
+              title="إلغاء"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className="text-[10px] font-bold text-slate-600">PIN:</span>
+            <span className="text-[10px] font-mono text-indigo-400 tracking-widest">
+              {showPin ? currentUser.pin_code : '••••'}
+            </span>
+            <button
+              onClick={() => setShowPin(!showPin)}
+              className="text-slate-500 hover:text-slate-300 cursor-pointer p-0.5"
+              title={showPin ? 'إخفاء الرمز' : 'إظهار الرمز'}
+            >
+              {showPin ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            </button>
+            <button
+              onClick={startEdit}
+              className="text-slate-500 hover:text-indigo-400 cursor-pointer p-0.5"
+              title="تعديل الرمز"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
+      <button onClick={onLogout} className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1 self-start">
+        <Unlock className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
 
 export default function App() {
   const { currentUser, setCurrentUser, logout, isAuthenticated, isAdmin } = useAuth();
   const { settings, isLoading: loadingSettings } = useSettings();
-  const { employees, isLoading: loadingEmployees } = useEmployees();
+  const { employees, updateEmployee, isLoading: loadingEmployees } = useEmployees();
   const { activeShift, openShift, closeShift, isLoading: loadingCash } = useCashRegister();
 
   const [currentView, setView] = useState<string>('dashboard');
@@ -294,20 +411,14 @@ export default function App() {
             ))}
           </div>
 
-          {/* Bottom: user info + logout */}
+          {/* Bottom: user info + PIN + logout */}
           <div className="p-3 border-t border-slate-800 bg-slate-950/20">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-xs font-black shrink-0 text-white">
-                {currentUser?.name?.charAt(0) || 'م'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-300 truncate">{currentUser?.name}</p>
-                <p className="text-[10px] text-slate-500">{currentUser?.position === 'admin' ? 'مدير' : 'موظف'}</p>
-              </div>
-              <button onClick={logout} className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1">
-                <Unlock className="w-4 h-4" />
-              </button>
-            </div>
+            <UserPinPanel
+              currentUser={currentUser}
+              onLogout={logout}
+              updateEmployee={updateEmployee}
+              setCurrentUser={setCurrentUser}
+            />
           </div>
         </nav>
 
@@ -396,26 +507,17 @@ export default function App() {
             })}
           </nav>
 
-          {/* Mobile: user info + logout (mirrors desktop sidebar) */}
+          {/* Mobile: user info + PIN + logout (mirrors desktop sidebar) */}
           <div className="p-3 border-t border-slate-800 bg-slate-950/20">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center text-xs font-black shrink-0 text-white">
-                {currentUser?.name?.charAt(0) || 'م'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-300 truncate">{currentUser?.name}</p>
-                <p className="text-[10px] text-slate-500">{currentUser?.position === 'admin' ? 'مدير' : 'موظف'}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  logout();
-                }}
-                className="text-slate-500 hover:text-red-400 transition cursor-pointer p-1"
-              >
-                <Unlock className="w-4 h-4" />
-              </button>
-            </div>
+            <UserPinPanel
+              currentUser={currentUser}
+              onLogout={() => {
+                setMobileMenuOpen(false);
+                logout();
+              }}
+              updateEmployee={updateEmployee}
+              setCurrentUser={setCurrentUser}
+            />
           </div>
 
           {/* Sidebar bottom signature */}

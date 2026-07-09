@@ -71,7 +71,7 @@ function UserPinPanel({
   updateEmployee: (employee: Employee) => Promise<any>;
   setCurrentUser: (user: Employee | null) => void;
 }) {
-  const [showPin, setShowPin] = useState(false);
+  const [showPin, setShowPin] = useState(true);
   const [editing, setEditing] = useState(false);
   const [pinDraft, setPinDraft] = useState(currentUser?.pin_code || '');
   const [saving, setSaving] = useState(false);

@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Employee } from '../types';
 import { toast } from 'sonner';
-import { initialEmployees } from '../data/mockData';
 
 export function useEmployees() {
   const queryClient = useQueryClient();
@@ -12,25 +11,14 @@ export function useEmployees() {
     queryFn: async () => {
       const hasSupabaseCreds = import.meta.env?.VITE_SUPABASE_URL && import.meta.env?.VITE_SUPABASE_ANON_KEY;
       if (!hasSupabaseCreds) {
-        return initialEmployees;
+        return [] as Employee[];
       }
-      try {
-        const { data, error } = await supabase
-          .from('employees')
-          .select('*')
-          .order('name');
-        if (error) {
-          console.warn('Supabase employees query error:', error.message);
-          return initialEmployees;
-        }
-        if (!data || data.length === 0) {
-          return initialEmployees;
-        }
-        return data as Employee[];
-      } catch (err) {
-        console.warn('useEmployees fetch exception:', err);
-        return initialEmployees;
-      }
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name');
+      if (error) throw new Error(`فشل تحميل بيانات الموظفين: ${error.message}`);
+      return (data ?? []) as Employee[];
     },
     staleTime: 1000 * 60 * 5,
   });

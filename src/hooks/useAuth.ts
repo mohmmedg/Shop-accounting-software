@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Employee } from '../types';
 import { toast } from 'sonner';
-import { initialEmployees } from '../data/mockData';
 
 const AUTH_KEY = 'store_current_user';
 
@@ -40,22 +39,9 @@ export function useAuth() {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-    // Development fallback
     if (!supabaseUrl || !supabaseAnonKey) {
-      const found = initialEmployees.find(emp =>
-        emp.pin_code === pinCode &&
-        (employeeId ? emp.id === employeeId : true) &&
-        (employeeBarcode ? emp.barcode === employeeBarcode : true) &&
-        emp.is_active
-      );
-      if (found) {
-        localStorage.setItem(AUTH_KEY, JSON.stringify(found));
-        updateGlobalUser(found);
-        toast.success(`مرحباً بك ${found.name} (وضع تجريبي)`);
-        return found;
-      }
-      toast.error('رمز المرور غير صحيح');
-      throw new Error('Invalid credentials');
+      toast.error('لم يتم إعداد الاتصال بقاعدة البيانات (Supabase). تحقق من متغيرات البيئة.');
+      throw new Error('Supabase not configured');
     }
 
     try {
@@ -90,7 +76,6 @@ export function useAuth() {
       const authUser = authResult.user;
       if (!authUser) throw new Error('لم يتم إنشاء جلسة مصادقة صحيحة');
 
-      // التحقق النهائي: auth user يجب أن يطابق الموظف المختار
       if (employeeId && authUser.id !== employeeId) {
         await supabase.auth.signOut();
         toast.error('رمز PIN غير صحيح لهذا الموظف');

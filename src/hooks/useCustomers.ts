@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { Customer } from '../types';
 import { toast } from 'sonner';
-import { initialCustomers } from '../data/mockData';
 
 export function useCustomers() {
   const queryClient = useQueryClient();
@@ -12,25 +11,14 @@ export function useCustomers() {
     queryFn: async () => {
       const hasSupabaseCreds = import.meta.env?.VITE_SUPABASE_URL && import.meta.env?.VITE_SUPABASE_ANON_KEY;
       if (!hasSupabaseCreds) {
-        return initialCustomers;
+        return [] as Customer[];
       }
-      try {
-        const { data, error } = await supabase
-          .from('customers')
-          .select('*')
-          .order('name');
-        if (error) {
-          console.warn('Supabase customers query error:', error.message);
-          return initialCustomers;
-        }
-        if (!data || data.length === 0) {
-          return initialCustomers;
-        }
-        return data as Customer[];
-      } catch (err) {
-        console.warn('useCustomers exception:', err);
-        return initialCustomers;
-      }
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name');
+      if (error) throw new Error(`فشل تحميل العملاء: ${error.message}`);
+      return (data ?? []) as Customer[];
     },
     staleTime: 1000 * 60 * 5,
   });

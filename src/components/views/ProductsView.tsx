@@ -44,6 +44,7 @@ export const ProductsView: React.FC = () => {
   const [showRestockForm, setShowRestockForm] = useState<any | null>(null);
   const [showAdjustmentForm, setShowAdjustmentForm] = useState<any | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
 
   // Form Inputs: Product Form
   const [nameInput, setNameInput] = useState('');
@@ -107,6 +108,7 @@ export const ProductsView: React.FC = () => {
 
   // Launch Add Form
   const handleOpenAdd = () => {
+    setIsSavingProduct(false);
     setEditingProductId(null);
     setNameInput('');
     setBarcodeInput(`621${Math.floor(100000000 + Math.random() * 900000000)}`);
@@ -151,6 +153,8 @@ export const ProductsView: React.FC = () => {
   // Product Form Save Submit
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingProduct) return; // منع الضغط المتكرر أثناء الحفظ
+    setIsSavingProduct(true);
     const isWeight = saleType === 'weight';
     const price = isWeight ? (parseFloat(pricePerKgInput) || 0) : (parseFloat(priceUsdInput) || 0);
     const qty = isWeight ? ((parseFloat(stockGramsInput) || 0) / 1000) : (parseFloat(quantityInput) || 0);
@@ -185,7 +189,10 @@ export const ProductsView: React.FC = () => {
         toast.success('تمت إضافة المنتج الجديد بنجاح');
       }
       setShowProductForm(false);
-    } catch (err) {}
+    } catch (err) {
+    } finally {
+      setIsSavingProduct(false);
+    }
   };
 
   // Submit Restock
@@ -769,9 +776,12 @@ export const ProductsView: React.FC = () => {
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer mt-4"
+                disabled={isSavingProduct}
+                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer mt-4 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                {editingProductId ? 'تحديث الصنف والأسعار' : 'إضافة الصنف الجديد والبدء بالبيع'}
+                {isSavingProduct
+                  ? '⏳ جاري الحفظ...'
+                  : (editingProductId ? 'تحديث الصنف والأسعار' : 'إضافة الصنف الجديد والبدء بالبيع')}
               </button>
             </form>
           </div>

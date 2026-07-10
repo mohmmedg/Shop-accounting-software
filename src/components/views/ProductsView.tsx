@@ -17,9 +17,13 @@ import {
   Coins,
   Sparkles,
   Bell,
-  BellRing
+  BellRing,
+  Tags
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const DEFAULT_CATEGORIES = ['غذائيات', 'زيوت وسمنة', 'بقوليات', 'مشروبات', 'منظفات', 'أجبان وألبان'];
+const CATEGORIES_STORAGE_KEY = 'alkhal_product_categories';
 
 export const ProductsView: React.FC = () => {
   const {
@@ -45,6 +49,20 @@ export const ProductsView: React.FC = () => {
   const [showAdjustmentForm, setShowAdjustmentForm] = useState<any | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
+
+  // Category management
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(CATEGORIES_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return DEFAULT_CATEGORIES;
+  });
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
 
   // Form Inputs: Product Form
   const [nameInput, setNameInput] = useState('');
@@ -84,11 +102,49 @@ export const ProductsView: React.FC = () => {
     return products.filter(p => p.quantity <= p.warning_limit);
   }, [products]);
 
-  // Categories list extraction
+  // Categories list extraction (merges manual list with any category already used by real products)
   const categories = useMemo(() => {
     const set = new Set(products.map(p => p.category));
     return Array.from(set);
   }, [products]);
+
+  // Full options shown inside the add/edit product form's category dropdown
+  const productFormCategoryOptions = useMemo(() => {
+    const merged = new Set([...categoryOptions, ...categories]);
+    return Array.from(merged);
+  }, [categoryOptions, categories]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(categoryOptions));
+    } catch {}
+  }, [categoryOptions]);
+
+  const handleAddCategory = () => {
+    const name = newCategoryInput.trim();
+    if (!name) return;
+    if (categoryOptions.includes(name)) {
+      toast.error('هذا التصنيف موجود بالفعل');
+      return;
+    }
+    setCategoryOptions(prev => [...prev, name]);
+    setNewCategoryInput('');
+    toast.success('تمت إضافة التصنيف بنجاح');
+  };
+
+  const handleDeleteCategory = (name: string) => {
+    const usedCount = products.filter(p => p.category === name).length;
+    if (usedCount > 0) {
+      toast.error(`لا يمكن حذف "${name}" لأنه مستخدم في ${usedCount} صنف حالياً`);
+      return;
+    }
+    setCategoryOptions(prev => prev.filter(c => c !== name));
+    if (categoryInput === name) {
+      const remaining = categoryOptions.filter(c => c !== name);
+      setCategoryInput(remaining[0] || '');
+    }
+    toast.success('تم حذف التصنيف بنجاح');
+  };
 
   // Filtering products list
   const filteredProducts = useMemo(() => {
@@ -584,18 +640,26 @@ export const ProductsView: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <label className="text-slate-400">التصنيف</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-slate-400">التصنيف</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowCategoryManager(true)}
+                      className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 text-[11px]"
+                      title="إدارة التصنيفات"
+                    >
+                      <Tags className="w-3.5 h-3.5" />
+                      إدارة
+                    </button>
+                  </div>
                   <select
                     value={categoryInput}
                     onChange={(e) => setCategoryInput(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 font-bold focus:outline-none focus:border-indigo-500 text-slate-300 cursor-pointer"
                   >
-                    <option value="غذائيات">غذائيات</option>
-                    <option value="زيوت وسمنة">زيوت وسمنة</option>
-                    <option value="بقوليات">بقوليات</option>
-                    <option value="مشروبات">مشروبات</option>
-                    <option value="منظفات">منظفات</option>
-                    <option value="أجبان وألبان">أجبان وألبان</option>
+                    {productFormCategoryOptions.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -784,6 +848,78 @@ export const ProductsView: React.FC = () => {
                   : (editingProductId ? 'تحديث الصنف والأسعار' : 'إضافة الصنف الجديد والبدء بالبيع')}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Category Manager Modal */}
+      {showCategoryManager && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3 shrink-0">
+              <button onClick={() => setShowCategoryManager(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-extrabold text-sm text-slate-100 flex items-center gap-2">
+                <Tags className="w-4 h-4 text-indigo-400" />
+                إدارة التصنيفات
+              </h3>
+            </div>
+
+            <div className="flex gap-2 my-4 shrink-0">
+              <input
+                type="text"
+                value={newCategoryInput}
+                onChange={(e) => setNewCategoryInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCategory();
+                  }
+                }}
+                placeholder="اسم التصنيف الجديد"
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl p-2.5 font-bold text-xs focus:outline-none focus:border-indigo-500 text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                className="bg-indigo-600 hover:bg-indigo-550 text-white font-black px-4 rounded-xl shadow-lg transition active:scale-95 cursor-pointer flex items-center gap-1 text-xs"
+              >
+                <Plus className="w-4 h-4" />
+                إضافة
+              </button>
+            </div>
+
+            <div className="space-y-2 overflow-y-auto pr-1">
+              {productFormCategoryOptions.map(c => {
+                const usedCount = products.filter(p => p.category === c).length;
+                return (
+                  <div
+                    key={c}
+                    className="flex items-center justify-between bg-slate-850 border border-slate-800 rounded-xl px-3 py-2"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-bold text-xs text-slate-200">{c}</span>
+                      {usedCount > 0 && (
+                        <span className="text-[10px] text-slate-500">مستخدم في {usedCount} صنف</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(c)}
+                      disabled={usedCount > 0}
+                      title={usedCount > 0 ? 'لا يمكن الحذف لوجود أصناف مرتبطة بهذا التصنيف' : 'حذف التصنيف'}
+                      className="text-red-400 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+              {productFormCategoryOptions.length === 0 && (
+                <p className="text-center text-xs text-slate-500 py-4">لا توجد تصنيفات بعد</p>
+              )}
+            </div>
           </div>
         </div>
       )}

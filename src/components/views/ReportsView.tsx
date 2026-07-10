@@ -224,24 +224,34 @@ export const ReportsView: React.FC = () => {
 
   // D. Profit margins list per product category
   const categoryMargins = useMemo(() => {
-    const dict: { [key: string]: { sales: number, cost: number } } = {};
+    const dict: { [key: string]: { sales: number, cost: number, discount: number } } = {};
     
     filteredInvoices.forEach(inv => {
+      const invRawTotal = inv.items.reduce((sum: number, it: any) => sum + Number(it.quantity) * Number(it.price_usd), 0);
+      const invDiscountUsd = Number(inv.discount_usd || 0);
+
       inv.items.forEach((item: any) => {
         const prod = products.find(p => p.id === item.product_id);
         const category = prod ? prod.category : 'غذائيات';
         if (!dict[category]) {
-          dict[category] = { sales: 0, cost: 0 };
+          dict[category] = { sales: 0, cost: 0, discount: 0 };
         }
+        // Use the cost recorded on the invoice at sale time, not the product's current cost,
+        // so historical reports don't shift when a product's cost price is edited later.
+        const historicalCost = item.cost_usd !== undefined && item.cost_usd !== null
+          ? Number(item.cost_usd)
+          : (prod ? Number(prod.cost_usd) : Number(item.price_usd) * 0.72);
         const salesVal = Number(item.quantity) * Number(item.price_usd);
-        const costVal = Number(item.quantity) * (prod ? Number(prod.cost_usd) : Number(item.price_usd) * 0.72);
+        const costVal = Number(item.quantity) * historicalCost;
+        const discountShare = invRawTotal > 0 ? (salesVal / invRawTotal) * invDiscountUsd : 0;
         dict[category].sales += salesVal;
         dict[category].cost += costVal;
+        dict[category].discount += discountShare;
       });
     });
 
     return Object.entries(dict).map(([category, vals]) => {
-      const profit = vals.sales - vals.cost;
+      const profit = vals.sales - vals.cost - vals.discount;
       const margin = vals.sales > 0 ? Math.round((profit / vals.sales) * 100) : 0;
       return {
         category,
@@ -354,11 +364,22 @@ export const ReportsView: React.FC = () => {
     // Aggregate sold items
     const itemsMap: Record<string, { name: string, quantity: number, totalUsd: number, totalSyp: number, profitUsd: number }> = {};
     todayInvoices.forEach(inv => {
+      // Invoice discounts are applied at the invoice level, not per line item — spread each
+      // invoice's discount across its items proportionally to revenue so the per-product
+      // breakdown always adds up to the same net profit shown above.
+      const invRawTotal = inv.items.reduce((sum: number, it: any) => sum + Number(it.quantity) * Number(it.price_usd), 0);
+      const invDiscountUsd = Number(inv.discount_usd || 0);
+
       inv.items.forEach((item: any) => {
         const key = item.product_id || item.product_name;
+        // Use the cost recorded on the invoice at sale time, not the product's current cost,
+        // so this breakdown always adds up to the same net profit shown above (and doesn't
+        // shift retroactively if a product's cost price is edited later).
         const prod = products.find(p => p.id === item.product_id);
-        const cost = prod ? prod.cost_usd : (item.cost_usd || 0);
-        const itemProfitUsd = (item.price_usd - cost) * item.quantity;
+        const cost = (item.cost_usd !== undefined && item.cost_usd !== null) ? Number(item.cost_usd) : (prod ? prod.cost_usd : 0);
+        const itemRevenue = Number(item.quantity) * Number(item.price_usd);
+        const itemDiscountShare = invRawTotal > 0 ? (itemRevenue / invRawTotal) * invDiscountUsd : 0;
+        const itemProfitUsd = (item.price_usd - cost) * item.quantity - itemDiscountShare;
 
         if (itemsMap[key]) {
           itemsMap[key].quantity += item.quantity;

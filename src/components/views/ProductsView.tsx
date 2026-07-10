@@ -40,6 +40,7 @@ export const ProductsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [stockFilter, setStockFilter] = useState<'all' | 'instock' | 'low' | 'out'>('all');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name_asc' | 'name_desc'>('newest');
 
   // Modals state
   const [showProductForm, setShowProductForm] = useState(false);
@@ -149,7 +150,7 @@ export const ProductsView: React.FC = () => {
   // Filtering products list
   const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase();
-    return products.filter(p => {
+    const filtered = products.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.toLowerCase().includes(q));
       const matchesCategory = categoryFilter === '' || p.category === categoryFilter;
       
@@ -160,7 +161,26 @@ export const ProductsView: React.FC = () => {
 
       return matchesSearch && matchesCategory && matchesStock;
     });
-  }, [products, searchQuery, categoryFilter, stockFilter]);
+
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (sortOrder === 'newest') {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      }
+      if (sortOrder === 'oldest') {
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      }
+      if (sortOrder === 'name_asc') {
+        return a.name.localeCompare(b.name, 'ar');
+      }
+      if (sortOrder === 'name_desc') {
+        return b.name.localeCompare(a.name, 'ar');
+      }
+      return 0;
+    });
+
+    return sorted;
+  }, [products, searchQuery, categoryFilter, stockFilter, sortOrder]);
 
   // Launch Add Form
   const handleOpenAdd = () => {
@@ -482,6 +502,17 @@ export const ProductsView: React.FC = () => {
             <option value="instock">متوفر بكثرة</option>
             <option value="low">تنبيه بالنفاد</option>
             <option value="out">نفذ تماماً</option>
+          </select>
+
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as any)}
+            className="bg-slate-950 border border-slate-850 rounded-xl px-4 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-505 cursor-pointer"
+          >
+            <option value="newest">الأحدث إضافة</option>
+            <option value="oldest">الأقدم إضافة</option>
+            <option value="name_asc">الاسم (أ-ي)</option>
+            <option value="name_desc">الاسم (ي-أ)</option>
           </select>
         </div>
       </div>

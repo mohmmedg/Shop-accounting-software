@@ -64,16 +64,20 @@ export function useInventory() {
       // 2. Update product stock level to actual counted quantity
       const { data: product } = await supabase
         .from('products')
-        .select('quantity')
+        .select('quantity, sold_by_weight')
         .eq('id', payload.product_id)
         .single();
 
       const currentQty = product?.quantity ?? 0;
+      const isWeight = product?.sold_by_weight === true;
 
       await supabase
         .from('products')
         .update({
           quantity: payload.actual_quantity,
+          // مزامنة stock_grams إجبارياً مع الكمية المصحَّحة لمنتجات الوزن
+          // لمنع تباعد الحقلين — وإلا يبقى فحص التوفر عند البيع يعتمد على قيمة قديمة
+          ...(isWeight ? { stock_grams: payload.actual_quantity * 1000 } : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', payload.product_id);

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Invoice, PaymentMethod } from '../types';
+import { Invoice, PaymentMethod, DebtPayment } from '../types';
 import { useAuth } from './useAuth';
 import { useSettings } from './useSettings';
 import { toast } from 'sonner';
@@ -70,6 +70,24 @@ export function useSales() {
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
+  // سجل كل دفعات الديون مع بيانات الفاتورة الأصلية (للتوزيع النسبي للربح على يوم القبض الفعلي)
+  const debtPaymentsQuery = useQuery({
+    queryKey: ['debt_payments'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('debt_payments')
+        .select('*, invoice:invoices(total_usd, profit_usd, items)')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (error) {
+        toast.error(`خطأ في تحميل سجل تسديد الديون: ${error.message}`);
+        throw error;
+      }
+      return data as DebtPayment[];
+    },
+    staleTime: 1000 * 60,
+  });
+
   // Create invoice (main POS/Sales transaction)
   const createInvoice = useMutation({
     mutationFn: async (invoiceData: CreateInvoiceInput) => {
@@ -135,19 +153,19 @@ export function useSales() {
             .select('quantity, stock_grams, sold_by_weight')
             .eq('id', item.product_id)
             .single();
-          
+
           const currentQty = product?.quantity ?? 0;
           const newQty = Math.max(0, currentQty - item.quantity);
 
           const currentGrams = product?.stock_grams !== undefined ? product.stock_grams : (product?.sold_by_weight ? currentQty * 1000 : undefined);
           const newGrams = currentGrams !== undefined ? Math.max(0, currentGrams - (item.quantity * 1000)) : undefined;
-          
+
           await supabase
             .from('products')
-            .update({ 
-              quantity: newQty, 
-              stock_grams: newGrams, 
-              updated_at: new Date().toISOString() 
+            .update({
+              quantity: newQty,
+              stock_grams: newGrams,
+              updated_at: new Date().toISOString()
             })
             .eq('id', item.product_id);
 
@@ -204,9 +222,9 @@ export function useSales() {
             .from('cash_registers')
             .select('*')
             .eq('status', 'open');
-          
+
           const openShift = openShifts?.[0];
-          
+
           if (openShift) {
             const closingUsd = (openShift.closing_balance_usd ?? openShift.opening_balance_usd) + cashAddedUsd;
             const closingSyp = (openShift.closing_balance_syp ?? openShift.opening_balance_syp) + cashAddedSyp;
@@ -356,6 +374,7 @@ export function useSales() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['cash_registers'] });
+      queryClient.invalidateQueries({ queryKey: ['debt_payments'] });
       toast.success('تم تسجيل دفعة الدين بنجاح وتحديث الصندوق');
     },
     onError: (err: any) => {
@@ -366,6 +385,7 @@ export function useSales() {
   return {
     invoices: invoicesQuery.data ?? [],
     todayInvoices: todayInvoicesQuery.data ?? [],
+    debtPayments: debtPaymentsQuery.data ?? [],
     isLoading: invoicesQuery.isLoading || todayInvoicesQuery.isLoading,
     createInvoice: createInvoice.mutateAsync,
     isCreating: createInvoice.isPending,

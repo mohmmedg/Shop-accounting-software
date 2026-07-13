@@ -79,6 +79,21 @@ export interface Invoice {
   profit_usd?: number;
 }
 
+// سجل تسديد دين — يحمل تاريخ القبض الفعلي، منفصل عن تاريخ البيع الأصلي
+export interface DebtPayment {
+  id: string;
+  invoice_id: string;
+  customer_name: string;
+  amount_usd: number;
+  amount_syp: number;
+  created_at: string;
+  invoice?: {
+    total_usd: number;
+    profit_usd?: number;
+    items?: InvoiceItem[];
+  };
+}
+
 export interface Sale {
   id: string;
   invoice_id: string;

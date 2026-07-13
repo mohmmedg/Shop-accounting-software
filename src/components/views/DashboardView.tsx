@@ -4,6 +4,7 @@ import { useCustomers } from '../../hooks/useCustomers';
 import { useSales } from '../../hooks/useSales';
 import { useSettings } from '../../hooks/useSettings';
 import { PageSkeleton } from '../shared/PageSkeleton';
+import { Invoice, DebtPayment } from '../../types';
 import {
   TrendingUp,
   TrendingDown,
@@ -32,10 +33,49 @@ import {
   Legend
 } from 'recharts';
 
+// ربح الفاتورة الإجمالي — نفس منطق الحساب الأصلي، مُستخرَج كدالة مشتركة
+const getInvoiceProfitUsd = (inv: Pick<Invoice, 'profit_usd' | 'items' | 'total_usd'>): number => {
+  if (inv.profit_usd !== undefined && inv.profit_usd !== null) return Number(inv.profit_usd);
+  const itemsProfit = inv.items?.reduce((sum, item) => {
+    const cost = item.cost_usd || 0;
+    return sum + (item.price_usd - cost) * item.quantity;
+  }, 0);
+  if (itemsProfit && itemsProfit > 0) return itemsProfit;
+  return Number(inv.total_usd) * 0.28;
+};
+
+// الربح "المُحصَّل فعلياً" في يوم معيّن =
+//   (نسبة ما دُفع وقت البيع من فواتير ذلك اليوم) + (نسبة أي دفعات دين حُصِّلت في ذلك اليوم لفواتير قديمة)
+const getRealizedProfitForDate = (
+  dateStr: string,
+  allInvoices: Invoice[],
+  allDebtPayments: DebtPayment[]
+): number => {
+  const saleDayProfit = allInvoices
+    .filter(inv => inv.sale_date.startsWith(dateStr) && Number(inv.paid_usd) > 0)
+    .reduce((acc, inv) => {
+      const invoiceProfit = getInvoiceProfitUsd(inv);
+      const totalUsd = Number(inv.total_usd) || 0;
+      const proportion = totalUsd > 0 ? Number(inv.paid_usd) / totalUsd : 0;
+      return acc + invoiceProfit * proportion;
+    }, 0);
+
+  const paymentsDayProfit = allDebtPayments
+    .filter(p => p.created_at?.startsWith(dateStr) && p.invoice)
+    .reduce((acc, p) => {
+      const invoiceProfit = getInvoiceProfitUsd(p.invoice as Invoice);
+      const totalUsd = Number(p.invoice!.total_usd) || 0;
+      const proportion = totalUsd > 0 ? Number(p.amount_usd) / totalUsd : 0;
+      return acc + invoiceProfit * proportion;
+    }, 0);
+
+  return saleDayProfit + paymentsDayProfit;
+};
+
 export const DashboardView: React.FC = () => {
   const { products, isLoading: loadingProducts } = useProducts();
   const { customers, isLoading: loadingCustomers } = useCustomers();
-  const { invoices, todayInvoices, isLoading: loadingSales } = useSales();
+  const { invoices, todayInvoices, debtPayments, isLoading: loadingSales } = useSales();
   const { settings, isLoading: loadingSettings } = useSettings();
 
   const [cardOrder, setCardOrder] = useState<string[]>(() => {
@@ -98,34 +138,12 @@ export const DashboardView: React.FC = () => {
       ? ((todaySalesUsd - yesterdaySalesUsd) / yesterdaySalesUsd) * 100
       : 12.4;
 
-    const todayProfitUsd = todayInvoices.reduce((acc, inv) => {
-      if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
-      const itemsProfit = inv.items?.reduce((sum, item) => {
-        const cost = item.cost_usd || 0;
-        return sum + (item.price_usd - cost) * item.quantity;
-      }, 0);
-      if (itemsProfit && itemsProfit > 0) return acc + itemsProfit;
-      return acc + Number(inv.total_usd) * 0.28;
-    }, 0);
+    // الربح الآن محسوب على أساس التحصيل الفعلي (يوم الدفع)، وليس تاريخ البيع
+    const todayProfitUsd = getRealizedProfitForDate(today, invoices, debtPayments);
+    const activeRate = settings?.usd_to_syp_rate ?? 15000;
+    const todayProfitSyp = Math.round(todayProfitUsd * activeRate);
 
-    const todayProfitSyp = todayInvoices.reduce((acc, inv) => {
-      if (inv.profit_syp !== undefined && inv.profit_syp !== null) return acc + Number(inv.profit_syp);
-      const profitUsd = inv.profit_usd || inv.items?.reduce((sum, item) => {
-        const cost = item.cost_usd || 0;
-        return sum + (item.price_usd - cost) * item.quantity;
-      }, 0) || (Number(inv.total_usd) * 0.28);
-      return acc + Math.round(profitUsd * settings.usd_to_syp_rate);
-    }, 0);
-
-    const yesterdayProfitUsd = yesterdayInvoices.reduce((acc, inv) => {
-      if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
-      const itemsProfit = inv.items?.reduce((sum, item) => {
-        const cost = item.cost_usd || 0;
-        return sum + (item.price_usd - cost) * item.quantity;
-      }, 0);
-      if (itemsProfit && itemsProfit > 0) return acc + itemsProfit;
-      return acc + Number(inv.total_usd) * 0.28;
-    }, 0);
+    const yesterdayProfitUsd = getRealizedProfitForDate(yesterday, invoices, debtPayments);
 
     const profitChange = yesterdayProfitUsd > 0
       ? ((todayProfitUsd - yesterdayProfitUsd) / yesterdayProfitUsd) * 100
@@ -142,11 +160,12 @@ export const DashboardView: React.FC = () => {
       todayInvoicesCount: todayInvoices.length,
       lowStockCount, totalStockValueUsd, totalStockValueSyp, totalQtyInStock
     };
-  }, [invoices, todayInvoices, products, settings]);
+  }, [invoices, todayInvoices, debtPayments, products, settings]);
 
   const chartData = useMemo(() => {
     const dates = [];
-    const arabicDays = ["السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+    // مُرتّبة لتطابق ترقيم JavaScript الفعلي: 0=الأحد, 1=الاثنين, ... (كانت مُزاحة يوماً كاملاً سابقاً)
+    const arabicDays = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
       dates.push({ dateStr: d.toISOString().split('T')[0], dayName: arabicDays[d.getDay()] });
@@ -154,15 +173,9 @@ export const DashboardView: React.FC = () => {
     return dates.map(item => {
       const dayInvoices = invoices.filter(inv => inv.sale_date.startsWith(item.dateStr));
       const totalSalesUsd = dayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
-      const totalProfitUsd = dayInvoices.reduce((acc, inv) => {
-        if (inv.profit_usd !== undefined && inv.profit_usd !== null) return acc + Number(inv.profit_usd);
-        const itemsProfit = inv.items?.reduce((sum, item) => {
-          const cost = item.cost_usd || 0;
-          return sum + (item.price_usd - cost) * item.quantity;
-        }, 0);
-        if (itemsProfit && itemsProfit > 0) return acc + itemsProfit;
-        return acc + Number(inv.total_usd) * 0.28;
-      }, 0);
+      // الربح اليومي بالمخطط أيضاً أصبح على أساس التحصيل الفعلي (يوم الدفع)
+      const totalProfitUsd = getRealizedProfitForDate(item.dateStr, invoices, debtPayments);
+
       return {
         name: item.dayName,
         date: item.dateStr.slice(5),
@@ -172,7 +185,7 @@ export const DashboardView: React.FC = () => {
         "الأرباح (ل.س 10k)": parseFloat(((totalProfitUsd * settings.usd_to_syp_rate) / 10000).toFixed(1))
       };
     });
-  }, [invoices, settings]);
+  }, [invoices, debtPayments, settings]);
 
   const lowStockProducts = useMemo(() => products.filter(p => p.quantity <= p.warning_limit).slice(0, 5), [products]);
   const recentInvoices = useMemo(() => invoices.slice(0, 5), [invoices]);

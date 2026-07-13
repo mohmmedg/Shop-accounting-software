@@ -72,6 +72,37 @@ const getRealizedProfitForDate = (
   return saleDayProfit + paymentsDayProfit;
 };
 
+// الإيراد "المُحصَّل فعلياً" (نقداً) في يوم معيّن =
+//   (ما دُفع فعلياً وقت البيع من فواتير ذلك اليوم — وليس القيمة الكلية للفاتورة)
+//   + (أي دفعات دين حُصِّلت في ذلك اليوم، حتى لو كانت الفاتورة الأصلية من يوم سابق)
+// هذا يعني: البيع بالدين لا يُضاف لـ"مبيعات اليوم" إطلاقاً حتى يُسدَّد فعلياً
+const getRealizedRevenueForDate = (
+  dateStr: string,
+  allInvoices: Invoice[],
+  allDebtPayments: DebtPayment[]
+): { usd: number; syp: number } => {
+  const saleDayRevenueUsd = allInvoices
+    .filter(inv => inv.sale_date.startsWith(dateStr))
+    .reduce((acc, inv) => acc + Number(inv.paid_usd || 0), 0);
+
+  const saleDayRevenueSyp = allInvoices
+    .filter(inv => inv.sale_date.startsWith(dateStr))
+    .reduce((acc, inv) => acc + Number(inv.paid_syp || 0), 0);
+
+  const paymentsDayRevenueUsd = allDebtPayments
+    .filter(p => p.created_at?.startsWith(dateStr))
+    .reduce((acc, p) => acc + Number(p.amount_usd || 0), 0);
+
+  const paymentsDayRevenueSyp = allDebtPayments
+    .filter(p => p.created_at?.startsWith(dateStr))
+    .reduce((acc, p) => acc + Number(p.amount_syp || 0), 0);
+
+  return {
+    usd: saleDayRevenueUsd + paymentsDayRevenueUsd,
+    syp: saleDayRevenueSyp + paymentsDayRevenueSyp,
+  };
+};
+
 export const DashboardView: React.FC = () => {
   const { products, isLoading: loadingProducts } = useProducts();
   const { customers, isLoading: loadingCustomers } = useCustomers();
@@ -128,17 +159,19 @@ export const DashboardView: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    const todaySalesUsd = todayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
-    const todaySalesSyp = todayInvoices.reduce((acc, inv) => acc + Number(inv.total_syp), 0);
+    // الإيراد الآن محسوب على أساس التحصيل الفعلي (نقداً)، وليس القيمة الكلية للفاتورة
+    const todayRevenue = getRealizedRevenueForDate(today, invoices, debtPayments);
+    const todaySalesUsd = todayRevenue.usd;
+    const todaySalesSyp = todayRevenue.syp;
 
-    const yesterdayInvoices = invoices.filter(inv => inv.sale_date.startsWith(yesterday));
-    const yesterdaySalesUsd = yesterdayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
+    const yesterdayRevenue = getRealizedRevenueForDate(yesterday, invoices, debtPayments);
+    const yesterdaySalesUsd = yesterdayRevenue.usd;
 
     const salesChange = yesterdaySalesUsd > 0
       ? ((todaySalesUsd - yesterdaySalesUsd) / yesterdaySalesUsd) * 100
       : 12.4;
 
-    // الربح الآن محسوب على أساس التحصيل الفعلي (يوم الدفع)، وليس تاريخ البيع
+    // الربح أيضاً محسوب على أساس التحصيل الفعلي (يوم الدفع)، وليس تاريخ البيع
     const todayProfitUsd = getRealizedProfitForDate(today, invoices, debtPayments);
     const activeRate = settings?.usd_to_syp_rate ?? 15000;
     const todayProfitSyp = Math.round(todayProfitUsd * activeRate);
@@ -171,16 +204,15 @@ export const DashboardView: React.FC = () => {
       dates.push({ dateStr: d.toISOString().split('T')[0], dayName: arabicDays[d.getDay()] });
     }
     return dates.map(item => {
-      const dayInvoices = invoices.filter(inv => inv.sale_date.startsWith(item.dateStr));
-      const totalSalesUsd = dayInvoices.reduce((acc, inv) => acc + Number(inv.total_usd), 0);
-      // الربح اليومي بالمخطط أيضاً أصبح على أساس التحصيل الفعلي (يوم الدفع)
+      // المبيعات والربح في المخطط أيضاً أصبحا على أساس التحصيل الفعلي (يوم الدفع)
+      const dayRevenue = getRealizedRevenueForDate(item.dateStr, invoices, debtPayments);
       const totalProfitUsd = getRealizedProfitForDate(item.dateStr, invoices, debtPayments);
 
       return {
         name: item.dayName,
         date: item.dateStr.slice(5),
-        "المبيعات ($)": parseFloat(totalSalesUsd.toFixed(1)),
-        "المبيعات (ل.س 10k)": parseFloat(((totalSalesUsd * settings.usd_to_syp_rate) / 10000).toFixed(1)),
+        "المبيعات ($)": parseFloat(dayRevenue.usd.toFixed(1)),
+        "المبيعات (ل.س 10k)": parseFloat((dayRevenue.syp / 10000).toFixed(1)),
         "الأرباح ($)": parseFloat(totalProfitUsd.toFixed(1)),
         "الأرباح (ل.س 10k)": parseFloat(((totalProfitUsd * settings.usd_to_syp_rate) / 10000).toFixed(1))
       };
@@ -245,7 +277,7 @@ export const DashboardView: React.FC = () => {
               <DollarSign className="w-5 h-5" />
             </div>
             <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">مبيعات اليوم</span>
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">مبيعات اليوم (محصَّلة)</span>
               <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
                 ${stats.todaySalesUsd.toFixed(2)}
               </span>
@@ -268,7 +300,7 @@ export const DashboardView: React.FC = () => {
               <Coins className="w-5 h-5" />
             </div>
             <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">صافي الأرباح اليوم</span>
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">صافي الأرباح اليوم (محصَّلة)</span>
               <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
                 ${stats.todayProfitUsd.toFixed(2)}
               </span>

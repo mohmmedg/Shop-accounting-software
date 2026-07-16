@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useSales } from '../../hooks/useSales';
 import { useSettings } from '../../hooks/useSettings';
 import { PageSkeleton } from '../shared/PageSkeleton';
+import { ConfirmDialog } from '../shared/ConfirmDialog';
 import {
   Search,
   Calendar,
@@ -12,12 +13,14 @@ import {
   FileText,
   Clock,
   X,
-  CreditCard
+  CreditCard,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const InvoicesView: React.FC = () => {
-  const { invoices, isLoading: loadingSales, recordDebtPayment } = useSales();
+  const { invoices, isLoading: loadingSales, recordDebtPayment, updateInvoiceTotal, deleteInvoice } = useSales();
   const { settings, isLoading: loadingSettings } = useSettings();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +36,13 @@ export const InvoicesView: React.FC = () => {
 
   // Active printing overlay
   const [printingInvoice, setPrintingInvoice] = useState<any | null>(null);
+
+  // Edit invoice total price state
+  const [editingInvoice, setEditingInvoice] = useState<any | null>(null);
+  const [editTotalUsd, setEditTotalUsd] = useState('');
+
+  // Delete invoice confirmation state
+  const [invoiceToDelete, setInvoiceToDelete] = useState<any | null>(null);
 
   // 1. Calculations for upper summary stats
   const stats = useMemo(() => {
@@ -91,6 +101,37 @@ export const InvoicesView: React.FC = () => {
       toast.success('تم تسجيل دفعة تسديد ذمة الدين بنجاح وتحديث الحساب المالي');
       setPayingInvoice(null);
     } catch (err) {}
+  };
+
+  const handleOpenEditInvoice = (inv: any) => {
+    setEditingInvoice(inv);
+    setEditTotalUsd(Number(inv.total_usd).toString());
+  };
+
+  const handleEditInvoiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInvoice) return;
+    const newTotal = parseFloat(editTotalUsd);
+    if (isNaN(newTotal) || newTotal < 0) {
+      toast.error('الرجاء إدخال قيمة صحيحة للسعر الإجمالي');
+      return;
+    }
+    try {
+      await updateInvoiceTotal({ invoiceId: editingInvoice.id, newTotalUsd: newTotal });
+      setEditingInvoice(null);
+    } catch (err) {}
+  };
+
+  const handleDeleteInvoiceClick = (inv: any) => {
+    setInvoiceToDelete(inv);
+  };
+
+  const confirmDeleteInvoice = async () => {
+    if (!invoiceToDelete) return;
+    try {
+      await deleteInvoice(invoiceToDelete.id);
+    } catch (err) {}
+    setInvoiceToDelete(null);
   };
 
   if (loadingSales || loadingSettings) {
@@ -289,6 +330,20 @@ export const InvoicesView: React.FC = () => {
                           <Printer className="w-3.5 h-3.5" />
                           <span>معاينة الفاتورة الحرارية</span>
                         </button>
+                        <button
+                          onClick={() => handleOpenEditInvoice(inv)}
+                          className="bg-slate-900 border border-slate-800 hover:border-amber-700 text-amber-400 px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>تعديل السعر الإجمالي</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteInvoiceClick(inv)}
+                          className="bg-rose-950/40 border border-rose-900/60 hover:border-rose-600 text-rose-400 px-4 py-2 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف الفاتورة</span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -430,6 +485,69 @@ export const InvoicesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Invoice Total Price Modal */}
+      {editingInvoice && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="invoice-edit-total-modal" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <button onClick={() => setEditingInvoice(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-black text-sm text-slate-100 flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-amber-400" />
+                <span>تعديل السعر الإجمالي للفاتورة</span>
+              </h3>
+            </div>
+
+            <form onSubmit={handleEditInvoiceSubmit} className="space-y-4 font-bold text-xs text-slate-300">
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1">
+                <p>الفاتورة: <span className="text-indigo-400 font-mono">{editingInvoice.invoice_number}</span></p>
+                <p>الزبون: <span className="text-slate-100">{editingInvoice.customer_name}</span></p>
+                <p>المبلغ المقبوض حالياً: <span className="text-emerald-400 font-mono font-black">${Number(editingInvoice.paid_usd).toFixed(2)}</span></p>
+                <p className="text-[10px] text-slate-500 leading-relaxed">سيتم إعادة احتساب الذمم المتبقية تلقائياً بناءً على الفرق بين السعر الجديد والمبلغ المقبوض</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-400">السعر الإجمالي الجديد ($):</label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  required
+                  value={editTotalUsd}
+                  onChange={(e) => setEditTotalUsd(e.target.value)}
+                  className="w-full text-center text-3xl font-black text-slate-100 bg-slate-950 border border-slate-850 rounded-xl p-3 focus:outline-none focus:border-amber-500"
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-amber-600 hover:bg-amber-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer"
+              >
+                حفظ السعر الجديد
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Invoice Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={invoiceToDelete !== null}
+        title="حذف الفاتورة نهائياً"
+        message={
+          invoiceToDelete
+            ? `هل أنت متأكد من رغبتك في حذف الفاتورة ${invoiceToDelete.invoice_number}؟ سيتم إرجاع البضاعة إلى المخزون وعكس أي ذمم أو مبالغ مسجلة على العميل والصندوق. لا يمكن التراجع عن هذا القرار.`
+            : ''
+        }
+        confirmLabel="نعم، احذف الفاتورة"
+        cancelLabel="إلغاء"
+        variant="danger"
+        onConfirm={confirmDeleteInvoice}
+        onCancel={() => setInvoiceToDelete(null)}
+      />
     </div>
   );
 };

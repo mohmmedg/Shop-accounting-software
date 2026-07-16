@@ -19,7 +19,7 @@ export function ReceiptPrint({ isOpen, invoice, settings, onClose }: ReceiptPrin
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" dir="rtl">
       {/* Container holding Receipt Visualizer and Print Actions */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full shadow-2xl flex flex-col max-h-[90dvh]">
         
         {/* Header bar */}
         <div className="p-4 border-b border-slate-800 flex justify-between items-center text-slate-100">

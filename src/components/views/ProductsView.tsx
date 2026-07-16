@@ -635,7 +635,7 @@ export const ProductsView: React.FC = () => {
       {/* Product Creation Modal */}
       {showProductForm && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="modal-product-creation" dir="rtl">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl text-right flex flex-col max-h-[95vh]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl text-right flex flex-col max-h-[95dvh]">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3 shrink-0">
               <button onClick={() => setShowProductForm(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />

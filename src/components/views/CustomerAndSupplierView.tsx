@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useSuppliers } from '../../hooks/useSuppliers';
+import { useSales } from '../../hooks/useSales';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { PageSkeleton } from '../shared/PageSkeleton';
 import {
@@ -17,7 +18,11 @@ import {
   Truck,
   Star,
   X,
-  TrendingUp
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  CreditCard,
+  Package
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -37,6 +42,11 @@ export const CustomerAndSupplierView: React.FC = () => {
     updateSupplier,
     deleteSupplier
   } = useSuppliers();
+
+  const { invoices } = useSales();
+
+  // Which customer's registered debt/goods panel is expanded
+  const [expandedDebtCustomerId, setExpandedDebtCustomerId] = useState<string | null>(null);
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<'customers' | 'suppliers'>('customers');
@@ -86,6 +96,22 @@ export const CustomerAndSupplierView: React.FC = () => {
       return name.toLowerCase().includes(q) || phone.toLowerCase().includes(q);
     });
   }, [suppliers, searchQuery]);
+
+  // Group unpaid/partial invoices ("البضاعة الدين") per customer
+  const customerDebtMap = useMemo(() => {
+    const map: Record<string, { totalDebtUsd: number; totalDebtSyp: number; invoices: any[] }> = {};
+    invoices.forEach(inv => {
+      if (inv.customer_id && Number(inv.remaining_debt_usd) > 0) {
+        if (!map[inv.customer_id]) {
+          map[inv.customer_id] = { totalDebtUsd: 0, totalDebtSyp: 0, invoices: [] };
+        }
+        map[inv.customer_id].totalDebtUsd += Number(inv.remaining_debt_usd);
+        map[inv.customer_id].totalDebtSyp += Number(inv.remaining_debt_syp);
+        map[inv.customer_id].invoices.push(inv);
+      }
+    });
+    return map;
+  }, [invoices]);
 
   // 2. FORM ACTIONS: CUSTOMER
   const handleOpenCustAdd = () => {
@@ -348,6 +374,54 @@ export const CustomerAndSupplierView: React.FC = () => {
                           <span className="text-sm font-mono text-emerald-400 mt-1 block">${Number(c.total_purchases_usd || 0).toFixed(1)}</span>
                         </div>
                       </div>
+
+                      {/* Registered debt / goods on credit for this customer */}
+                      {customerDebtMap[c.id] && (
+                        <div className="border border-rose-500/20 bg-rose-500/5 rounded-xl p-2.5 space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedDebtCustomerId(prev => (prev === c.id ? null : c.id))}
+                            className="w-full flex justify-between items-center text-[10px] cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1 text-rose-400">
+                              {expandedDebtCustomerId === c.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>عرض البضاعة الدين المسجلة</span>
+                            </span>
+                            <span className="font-mono font-black text-rose-400">${customerDebtMap[c.id].totalDebtUsd.toFixed(2)}</span>
+                          </button>
+
+                          {expandedDebtCustomerId === c.id && (
+                            <div className="space-y-2 pt-2 border-t border-rose-500/10 max-h-56 overflow-y-auto">
+                              {customerDebtMap[c.id].invoices.map(inv => (
+                                <div key={inv.id} className="bg-slate-950 border border-slate-850 rounded-lg p-2 text-[10px] space-y-1.5">
+                                  <div className="flex justify-between text-slate-500 font-mono">
+                                    <span className="text-indigo-400">{inv.invoice_number}</span>
+                                    <span>{new Date(inv.sale_date).toLocaleDateString('ar-SY')}</span>
+                                  </div>
+                                  <div className="space-y-1">
+                                    {(inv.items || []).map((item: any, idx: number) => (
+                                      <div key={idx} className="flex justify-between items-center text-slate-300">
+                                        <span className="flex items-center gap-1 truncate">
+                                          <Package className="w-3 h-3 text-slate-600 shrink-0" />
+                                          <span className="truncate">{item.product_name}</span>
+                                        </span>
+                                        <span className="font-mono shrink-0">
+                                          {Number(item.quantity).toFixed(item.is_weight ? 3 : 0)} × ${Number(item.price_usd).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="flex justify-between text-rose-400 font-black border-t border-slate-850 pt-1">
+                                    <span>المتبقي على هذه الفاتورة:</span>
+                                    <span className="font-mono">${Number(inv.remaining_debt_usd).toFixed(2)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Footer Actions */}

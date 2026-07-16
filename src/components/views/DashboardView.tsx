@@ -112,6 +112,34 @@ const getRealizedRevenueForDate = (
   };
 };
 
+// رأس المال "المُحصَّل فعلياً" (تكلفة البضاعة التي قُبض ثمنها نقداً) في يوم معيّن =
+//   (نسبة التكلفة المقابلة لما دُفع وقت البيع من فواتير ذلك اليوم) + (نسبة التكلفة المقابلة لأي دفعات دين حُصِّلت في ذلك اليوم لفواتير قديمة)
+const getRealizedCapitalForDate = (
+  dateStr: string,
+  allInvoices: Invoice[],
+  allDebtPayments: DebtPayment[]
+): number => {
+  const saleDayCapital = allInvoices
+    .filter(inv => inv.sale_date.startsWith(dateStr) && Number(inv.paid_usd) > 0)
+    .reduce((acc, inv) => {
+      const invoiceCost = getInvoiceCostUsd(inv);
+      const totalUsd = Number(inv.total_usd) || 0;
+      const proportion = totalUsd > 0 ? Number(inv.paid_usd) / totalUsd : 0;
+      return acc + invoiceCost * proportion;
+    }, 0);
+
+  const paymentsDayCapital = allDebtPayments
+    .filter(p => p.created_at?.startsWith(dateStr) && p.invoice)
+    .reduce((acc, p) => {
+      const invoiceCost = getInvoiceCostUsd(p.invoice as Invoice);
+      const totalUsd = Number(p.invoice!.total_usd) || 0;
+      const proportion = totalUsd > 0 ? Number(p.amount_usd) / totalUsd : 0;
+      return acc + invoiceCost * proportion;
+    }, 0);
+
+  return saleDayCapital + paymentsDayCapital;
+};
+
 const DEFAULT_CARD_ORDER = ['stock_valuation', 'daily_sales', 'daily_profits', 'daily_capital', 'invoices_count', 'low_stock'];
 
 export const DashboardView: React.FC = () => {
@@ -193,9 +221,9 @@ export const DashboardView: React.FC = () => {
       ? ((todayProfitUsd - yesterdayProfitUsd) / yesterdayProfitUsd) * 100
       : 5.6;
 
-    // رأس مال كل ما بيع اليوم — يُحسب على أساس تاريخ البيع نفسه (وليس يوم القبض)
-    // لأن البضاعة تخرج فعلياً من المستودع لحظة البيع، بغض النظر عن كونها نقداً أو ديناً
-    const todayCapitalUsd = todayInvoices.reduce((acc, inv) => acc + getInvoiceCostUsd(inv), 0);
+    // رأس مال ما تم تحصيله فعلياً اليوم — بنفس أساس المبيعات والأرباح (نقداً/محصَّل)
+    // بهذا الشكل: رأس المال المحصَّل + الربح المحصَّل = المبيعات المحصَّلة دائماً
+    const todayCapitalUsd = getRealizedCapitalForDate(today, invoices, debtPayments);
     const todayCapitalSyp = Math.round(todayCapitalUsd * activeRate);
 
     const lowStockCount = products.filter(p => p.quantity <= p.warning_limit).length;
@@ -339,7 +367,7 @@ export const DashboardView: React.FC = () => {
               <Wallet className="w-7 h-7" />
             </div>
             <div className="flex-1 text-right min-w-0">
-              <span className="text-slate-500 text-xs font-bold block mb-1.5">رأس مال كل ما بيع اليوم</span>
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">رأس المال المحصَّل اليوم</span>
               <span className="text-2xl font-extrabold text-slate-100 block leading-tight font-mono whitespace-nowrap">
                 ${stats.todayCapitalUsd.toFixed(2)}
               </span>
@@ -347,7 +375,7 @@ export const DashboardView: React.FC = () => {
                 ≈ {stats.todayCapitalSyp.toLocaleString()} ل.س
               </span>
               <span className="text-xs text-slate-400 font-bold block mt-1 whitespace-nowrap">
-                تكلفة البضاعة الخارجة (نقداً ودين)
+                تكلفة البضاعة المقابلة للنقد المُحصَّل
               </span>
             </div>
           </div>

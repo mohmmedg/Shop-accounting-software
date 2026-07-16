@@ -251,7 +251,7 @@ export const DashboardView: React.FC = () => {
       onDragEnd: handleDragEnd,
     };
 
-    const commonClasses = `relative bg-slate-900 rounded-2xl p-4 shadow-xl flex items-center gap-3 border transition-all duration-200 cursor-grab active:cursor-grabbing group select-none ${
+    const commonClasses = `relative bg-slate-900 rounded-2xl p-5 shadow-xl flex items-center gap-4 border transition-all duration-200 cursor-grab active:cursor-grabbing group select-none min-h-[132px] ${
       isDragging ? 'opacity-40 scale-95 border-indigo-500/50 bg-slate-950' :
       isDragOver ? 'border-indigo-500 scale-[1.02] bg-slate-850 shadow-indigo-500/10 shadow-lg' : 'border-slate-800 hover:border-slate-700 hover:shadow-slate-950'
     }`;
@@ -267,18 +267,18 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="stock_valuation" {...dragProps} className={`${commonClasses} border-indigo-500/20 bg-gradient-to-br from-slate-900 to-indigo-950/20`}>
             {dragHandle}
-            <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400 shrink-0">
-              <PackageCheck className="w-5 h-5" />
+            <div className="p-3.5 bg-emerald-500/10 rounded-xl text-emerald-400 shrink-0">
+              <PackageCheck className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">جرد قيمة البضاعة</span>
-              <span className="text-base font-extrabold text-emerald-400 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">جرد قيمة البضاعة</span>
+              <span className="text-2xl font-extrabold text-emerald-400 block leading-tight font-mono whitespace-nowrap">
                 ${stats.totalStockValueUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </span>
-              <span className="text-[9px] font-bold text-amber-500 block mt-0.5 font-mono truncate">
-                ≈ {(stats.totalStockValueSyp / 1000).toFixed(0)}k ل.س
+              <span className="text-xs font-bold text-amber-500 block mt-1 font-mono whitespace-nowrap">
+                ≈ {stats.totalStockValueSyp.toLocaleString()} ل.س
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">
+              <span className="text-xs text-slate-400 font-bold block mt-1 whitespace-nowrap">
                 {stats.totalQtyInStock.toLocaleString()} وحدة
               </span>
             </div>
@@ -289,19 +289,19 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="daily_sales" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <DollarSign className="w-5 h-5" />
+            <div className="p-3.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <DollarSign className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">مبيعات اليوم (محصَّلة)</span>
-              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">مبيعات اليوم (محصَّلة)</span>
+              <span className="text-2xl font-extrabold text-slate-100 block leading-tight font-mono whitespace-nowrap">
                 ${stats.todaySalesUsd.toFixed(2)}
               </span>
-              <span className="text-[9px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
-                ≈ {(stats.todaySalesSyp / 1000).toFixed(0)}k ل.س
+              <span className="text-xs font-bold text-indigo-400 block mt-1 font-mono whitespace-nowrap">
+                ≈ {stats.todaySalesSyp.toLocaleString()} ل.س
               </span>
-              <span className="text-[9px] font-black text-emerald-400 mt-0.5 flex items-center gap-0.5 truncate">
-                <TrendingUp className="w-3 h-3 shrink-0" />
+              <span className="text-xs font-black text-emerald-400 mt-1 flex items-center gap-1 whitespace-nowrap">
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
                 <span>+{stats.salesChange.toFixed(1)}%</span>
               </span>
             </div>
@@ -312,19 +312,19 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="daily_profits" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <Coins className="w-5 h-5" />
+            <div className="p-3.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <Coins className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">صافي الأرباح اليوم (محصَّلة)</span>
-              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">صافي الأرباح اليوم (محصَّلة)</span>
+              <span className="text-2xl font-extrabold text-slate-100 block leading-tight font-mono whitespace-nowrap">
                 ${stats.todayProfitUsd.toFixed(2)}
               </span>
-              <span className="text-[9px] font-bold text-indigo-400 block mt-0.5 font-mono truncate">
-                ≈ {(stats.todayProfitSyp / 1000).toFixed(0)}k ل.س
+              <span className="text-xs font-bold text-indigo-400 block mt-1 font-mono whitespace-nowrap">
+                ≈ {stats.todayProfitSyp.toLocaleString()} ل.س
               </span>
-              <span className="text-[9px] font-black text-emerald-400 mt-0.5 flex items-center gap-0.5 truncate">
-                <TrendingUp className="w-3 h-3 shrink-0" />
+              <span className="text-xs font-black text-emerald-400 mt-1 flex items-center gap-1 whitespace-nowrap">
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
                 <span>+{stats.profitChange.toFixed(1)}%</span>
               </span>
             </div>
@@ -335,18 +335,18 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="daily_capital" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400 shrink-0">
-              <Wallet className="w-5 h-5" />
+            <div className="p-3.5 bg-amber-500/10 rounded-xl text-amber-400 shrink-0">
+              <Wallet className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">رأس مال كل ما بيع اليوم</span>
-              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">رأس مال كل ما بيع اليوم</span>
+              <span className="text-2xl font-extrabold text-slate-100 block leading-tight font-mono whitespace-nowrap">
                 ${stats.todayCapitalUsd.toFixed(2)}
               </span>
-              <span className="text-[9px] font-bold text-amber-400 block mt-0.5 font-mono truncate">
-                ≈ {(stats.todayCapitalSyp / 1000).toFixed(0)}k ل.س
+              <span className="text-xs font-bold text-amber-400 block mt-1 font-mono whitespace-nowrap">
+                ≈ {stats.todayCapitalSyp.toLocaleString()} ل.س
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">
+              <span className="text-xs text-slate-400 font-bold block mt-1 whitespace-nowrap">
                 تكلفة البضاعة الخارجة (نقداً ودين)
               </span>
             </div>
@@ -357,15 +357,15 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="invoices_count" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
-              <ShoppingCart className="w-5 h-5" />
+            <div className="p-3.5 bg-indigo-500/10 rounded-xl text-indigo-400 shrink-0">
+              <ShoppingCart className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">فواتير اليوم</span>
-              <span className="text-xl font-black text-slate-100 block font-mono truncate">
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">فواتير اليوم</span>
+              <span className="text-3xl font-black text-slate-100 block font-mono whitespace-nowrap">
                 {stats.todayInvoicesCount}
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">عمليات بيع</span>
+              <span className="text-xs text-slate-400 font-bold block mt-1 whitespace-nowrap">عمليات بيع</span>
             </div>
           </div>
         );
@@ -374,15 +374,15 @@ export const DashboardView: React.FC = () => {
         return (
           <div key="low_stock" {...dragProps} className={commonClasses}>
             {dragHandle}
-            <div className="p-2.5 bg-rose-500/10 rounded-xl text-rose-400 shrink-0">
-              <AlertTriangle className="w-5 h-5" />
+            <div className="p-3.5 bg-rose-500/10 rounded-xl text-rose-400 shrink-0">
+              <AlertTriangle className="w-7 h-7" />
             </div>
-            <div className="flex-1 text-right min-w-0 overflow-hidden">
-              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">تنبيهات المخزن</span>
-              <span className={`text-xl font-black block font-mono truncate ${stats.lowStockCount > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-100'}`}>
+            <div className="flex-1 text-right min-w-0">
+              <span className="text-slate-500 text-xs font-bold block mb-1.5">تنبيهات المخزن</span>
+              <span className={`text-3xl font-black block font-mono whitespace-nowrap ${stats.lowStockCount > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-100'}`}>
                 {stats.lowStockCount}
               </span>
-              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">أصناف منخفضة</span>
+              <span className="text-xs text-slate-400 font-bold block mt-1 whitespace-nowrap">أصناف منخفضة</span>
             </div>
           </div>
         );
@@ -450,7 +450,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Stats Cards — responsive grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4" id="stats-cards-grid">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="stats-cards-grid">
         {cardOrder.map((cardId, idx) => renderCard(cardId, idx))}
       </div>
 

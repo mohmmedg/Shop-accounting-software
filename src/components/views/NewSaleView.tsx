@@ -785,7 +785,7 @@ export const NewSaleView: React.FC = () => {
       {/* OVERLAY 1: Search Popover selector */}
       {showProductSearch && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="popover-product-search" dir="rtl">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl text-right flex flex-col h-[70vh]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl text-right flex flex-col h-[70dvh]">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3 shrink-0">
               <button onClick={() => setShowProductSearch(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />

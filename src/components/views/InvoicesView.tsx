@@ -349,7 +349,7 @@ export const InvoicesView: React.FC = () => {
       {/* Thermal Invoice Print Popup Preview */}
       {printingInvoice && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="invoice-print-receipt-preview" dir="rtl">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right flex flex-col h-[90vh]">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right flex flex-col h-[90dvh]">
             <div className="flex justify-between items-center border-b border-slate-800 pb-2 shrink-0">
               <button onClick={() => setPrintingInvoice(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />

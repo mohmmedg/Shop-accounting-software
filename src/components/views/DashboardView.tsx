@@ -18,7 +18,8 @@ import {
   ArrowUpRight,
   PackageCheck,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  Wallet
 } from 'lucide-react';
 import {
   LineChart,
@@ -42,6 +43,15 @@ const getInvoiceProfitUsd = (inv: Pick<Invoice, 'profit_usd' | 'items' | 'total_
   }, 0);
   if (itemsProfit && itemsProfit > 0) return itemsProfit;
   return Number(inv.total_usd) * 0.28;
+};
+
+// تكلفة الفاتورة (رأس المال الذي خرج من المستودع) — مستقلة عن حالة الدفع تماماً
+const getInvoiceCostUsd = (inv: Pick<Invoice, 'profit_usd' | 'items' | 'total_usd'>): number => {
+  const itemsCost = inv.items?.reduce((sum, item) => sum + (item.cost_usd || 0) * item.quantity, 0);
+  if (itemsCost !== undefined && itemsCost > 0) return itemsCost;
+  // تقدير احتياطي: التكلفة = الإجمالي - الربح (نفس افتراض هامش 28% المستخدم أصلاً بالمشروع)
+  const profit = getInvoiceProfitUsd(inv);
+  return Math.max(0, Number(inv.total_usd) - profit);
 };
 
 // الربح "المُحصَّل فعلياً" في يوم معيّن =
@@ -75,7 +85,6 @@ const getRealizedProfitForDate = (
 // الإيراد "المُحصَّل فعلياً" (نقداً) في يوم معيّن =
 //   (ما دُفع فعلياً وقت البيع من فواتير ذلك اليوم — وليس القيمة الكلية للفاتورة)
 //   + (أي دفعات دين حُصِّلت في ذلك اليوم، حتى لو كانت الفاتورة الأصلية من يوم سابق)
-// هذا يعني: البيع بالدين لا يُضاف لـ"مبيعات اليوم" إطلاقاً حتى يُسدَّد فعلياً
 const getRealizedRevenueForDate = (
   dateStr: string,
   allInvoices: Invoice[],
@@ -103,6 +112,8 @@ const getRealizedRevenueForDate = (
   };
 };
 
+const DEFAULT_CARD_ORDER = ['stock_valuation', 'daily_sales', 'daily_profits', 'daily_capital', 'invoices_count', 'low_stock'];
+
 export const DashboardView: React.FC = () => {
   const { products, isLoading: loadingProducts } = useProducts();
   const { customers, isLoading: loadingCustomers } = useCustomers();
@@ -114,12 +125,12 @@ export const DashboardView: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length === 5) {
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_CARD_ORDER.length && parsed.includes('daily_capital')) {
           return parsed;
         }
       } catch (e) {}
     }
-    return ['stock_valuation', 'daily_sales', 'daily_profits', 'invoices_count', 'low_stock'];
+    return DEFAULT_CARD_ORDER;
   });
 
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -182,6 +193,11 @@ export const DashboardView: React.FC = () => {
       ? ((todayProfitUsd - yesterdayProfitUsd) / yesterdayProfitUsd) * 100
       : 5.6;
 
+    // رأس مال كل ما بيع اليوم — يُحسب على أساس تاريخ البيع نفسه (وليس يوم القبض)
+    // لأن البضاعة تخرج فعلياً من المستودع لحظة البيع، بغض النظر عن كونها نقداً أو ديناً
+    const todayCapitalUsd = todayInvoices.reduce((acc, inv) => acc + getInvoiceCostUsd(inv), 0);
+    const todayCapitalSyp = Math.round(todayCapitalUsd * activeRate);
+
     const lowStockCount = products.filter(p => p.quantity <= p.warning_limit).length;
     const totalStockValueUsd = products.reduce((acc, p) => acc + ((p.quantity || 0) * (p.cost_usd || 0)), 0);
     const totalStockValueSyp = Math.round(totalStockValueUsd * settings.usd_to_syp_rate);
@@ -190,6 +206,7 @@ export const DashboardView: React.FC = () => {
     return {
       todaySalesUsd, todaySalesSyp, salesChange,
       todayProfitUsd, todayProfitSyp, profitChange,
+      todayCapitalUsd, todayCapitalSyp,
       todayInvoicesCount: todayInvoices.length,
       lowStockCount, totalStockValueUsd, totalStockValueSyp, totalQtyInStock
     };
@@ -197,14 +214,13 @@ export const DashboardView: React.FC = () => {
 
   const chartData = useMemo(() => {
     const dates = [];
-    // مُرتّبة لتطابق ترقيم JavaScript الفعلي: 0=الأحد, 1=الاثنين, ... (كانت مُزاحة يوماً كاملاً سابقاً)
+    // مُرتّبة لتطابق ترقيم JavaScript الفعلي: 0=الأحد, 1=الاثنين, ...
     const arabicDays = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
       dates.push({ dateStr: d.toISOString().split('T')[0], dayName: arabicDays[d.getDay()] });
     }
     return dates.map(item => {
-      // المبيعات والربح في المخطط أيضاً أصبحا على أساس التحصيل الفعلي (يوم الدفع)
       const dayRevenue = getRealizedRevenueForDate(item.dateStr, invoices, debtPayments);
       const totalProfitUsd = getRealizedProfitForDate(item.dateStr, invoices, debtPayments);
 
@@ -315,6 +331,28 @@ export const DashboardView: React.FC = () => {
           </div>
         );
 
+      case 'daily_capital':
+        return (
+          <div key="daily_capital" {...dragProps} className={commonClasses}>
+            {dragHandle}
+            <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400 shrink-0">
+              <Wallet className="w-5 h-5" />
+            </div>
+            <div className="flex-1 text-right min-w-0 overflow-hidden">
+              <span className="text-slate-500 text-[9px] font-bold block mb-1 truncate">رأس مال كل ما بيع اليوم</span>
+              <span className="text-base font-extrabold text-slate-100 block leading-tight font-mono truncate">
+                ${stats.todayCapitalUsd.toFixed(2)}
+              </span>
+              <span className="text-[9px] font-bold text-amber-400 block mt-0.5 font-mono truncate">
+                ≈ {(stats.todayCapitalSyp / 1000).toFixed(0)}k ل.س
+              </span>
+              <span className="text-[9px] text-slate-400 font-bold block mt-0.5 truncate">
+                تكلفة البضاعة الخارجة (نقداً ودين)
+              </span>
+            </div>
+          </div>
+        );
+
       case 'invoices_count':
         return (
           <div key="invoices_count" {...dragProps} className={commonClasses}>
@@ -397,12 +435,11 @@ export const DashboardView: React.FC = () => {
             اسحب وأفلت لترتيب البطاقات حسب اهتمامك
           </span>
         </div>
-        {JSON.stringify(cardOrder) !== JSON.stringify(['stock_valuation', 'daily_sales', 'daily_profits', 'invoices_count', 'low_stock']) && (
+        {JSON.stringify(cardOrder) !== JSON.stringify(DEFAULT_CARD_ORDER) && (
           <button
             onClick={() => {
-              const def = ['stock_valuation', 'daily_sales', 'daily_profits', 'invoices_count', 'low_stock'];
-              setCardOrder(def);
-              localStorage.setItem('dashboard_card_order', JSON.stringify(def));
+              setCardOrder(DEFAULT_CARD_ORDER);
+              localStorage.setItem('dashboard_card_order', JSON.stringify(DEFAULT_CARD_ORDER));
             }}
             className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-indigo-400 bg-slate-900 hover:bg-slate-850 px-3 py-1.5 rounded-xl border border-slate-800 transition cursor-pointer"
           >
@@ -413,7 +450,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Stats Cards — responsive grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4" id="stats-cards-grid">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4" id="stats-cards-grid">
         {cardOrder.map((cardId, idx) => renderCard(cardId, idx))}
       </div>
 

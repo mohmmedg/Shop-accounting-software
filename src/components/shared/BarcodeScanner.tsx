@@ -235,7 +235,7 @@ export function BarcodeScanner({ isOpen, onClose, onScan, products }: BarcodeSca
       {/* Dummy container for file scanner processing */}
       <div id="camera-scanner-reader-dummy" className="hidden" style={{ display: 'none' }} />
 
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]">
         
         {/* Header */}
         <div className="flex justify-between items-center bg-slate-950 border-b border-slate-850 px-5 py-4">

@@ -31,7 +31,8 @@ export const ProductsView: React.FC = () => {
     isLoading,
     addProduct,
     updateProduct,
-    deleteProduct
+    deleteProduct,
+    isUpdating: isUpdatingProduct
   } = useProducts();
 
   const { settings } = useSettings();
@@ -274,6 +275,7 @@ export const ProductsView: React.FC = () => {
   // Submit Restock
   const handleRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUpdatingProduct) return; // منع الإرسال المزدوج
     if (!showRestockForm) return;
     const extraQty = parseFloat(restockQty);
     if (isNaN(extraQty) || extraQty <= 0) {
@@ -294,6 +296,7 @@ export const ProductsView: React.FC = () => {
   // Submit Stock Adjustment Override
   const handleAdjustmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUpdatingProduct) return; // منع الإرسال المزدوج
     if (!showAdjustmentForm) return;
     const targetQty = parseFloat(adjustQty);
     if (isNaN(targetQty) || targetQty < 0) {
@@ -985,9 +988,10 @@ export const ProductsView: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-550 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer"
+                disabled={isUpdatingProduct}
+                className="w-full bg-emerald-600 hover:bg-emerald-550 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                تحديث وزيادة المخزن المتاح
+                {isUpdatingProduct ? 'جاري التحديث...' : 'تحديث وزيادة المخزن المتاح'}
               </button>
             </form>
           </div>
@@ -1034,9 +1038,10 @@ export const ProductsView: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer"
+                disabled={isUpdatingProduct}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                تثبيت جرد وتسوية الرفوف
+                {isUpdatingProduct ? 'جاري التحديث...' : 'تثبيت جرد وتسوية الرفوف'}
               </button>
             </form>
           </div>

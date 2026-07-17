@@ -4,6 +4,7 @@ import { useSuppliers } from '../../hooks/useSuppliers';
 import { useSales } from '../../hooks/useSales';
 import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { PageSkeleton } from '../shared/PageSkeleton';
+import { Invoice, InvoiceItem } from '../../types';
 import {
   Users,
   Search,
@@ -19,10 +20,12 @@ import {
   Star,
   X,
   TrendingUp,
+  Wallet,
+  CreditCard,
+  FileEdit,
   ChevronDown,
   ChevronUp,
-  CreditCard,
-  Package
+  Save
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -43,10 +46,13 @@ export const CustomerAndSupplierView: React.FC = () => {
     deleteSupplier
   } = useSuppliers();
 
-  const { invoices } = useSales();
-
-  // Which customer's registered debt/goods panel is expanded
-  const [expandedDebtCustomerId, setExpandedDebtCustomerId] = useState<string | null>(null);
+  const {
+    invoices,
+    isLoading: loadingSales,
+    recordDebtPayment,
+    updateInvoiceItems,
+    isUpdatingInvoice
+  } = useSales();
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<'customers' | 'suppliers'>('customers');
@@ -78,6 +84,36 @@ export const CustomerAndSupplierView: React.FC = () => {
   const [suppRating, setSuppRating] = useState('5');
   const [suppNotes, setSuppNotes] = useState('');
 
+  // ====== حساب دين وسجل مشتريات كل عميل ======
+  const [viewingCustomer, setViewingCustomer] = useState<any | null>(null);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+
+  // نافذة تسديد الدين
+  const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
+  const [debtPayAmountUsd, setDebtPayAmountUsd] = useState('');
+
+  // نافذة تعديل الفاتورة (المنتجات المُباعة)
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [editItems, setEditItems] = useState<InvoiceItem[]>([]);
+
+  const customerDebtMap = useMemo(() => {
+    const map: Record<string, { totalDebtUsd: number; invoiceCount: number }> = {};
+    invoices.forEach(inv => {
+      if (!inv.customer_id) return;
+      if (!map[inv.customer_id]) map[inv.customer_id] = { totalDebtUsd: 0, invoiceCount: 0 };
+      map[inv.customer_id].totalDebtUsd += Number(inv.remaining_debt_usd || 0);
+      map[inv.customer_id].invoiceCount += 1;
+    });
+    return map;
+  }, [invoices]);
+
+  const viewingCustomerInvoices = useMemo(() => {
+    if (!viewingCustomer) return [];
+    return invoices
+      .filter(inv => inv.customer_id === viewingCustomer.id)
+      .sort((a, b) => new Date(b.sale_date).getTime() - new Date(a.sale_date).getTime());
+  }, [invoices, viewingCustomer]);
+
   // 1. FILTERS
   const filteredCustomers = useMemo(() => {
     const q = searchQuery.toLowerCase();
@@ -96,22 +132,6 @@ export const CustomerAndSupplierView: React.FC = () => {
       return name.toLowerCase().includes(q) || phone.toLowerCase().includes(q);
     });
   }, [suppliers, searchQuery]);
-
-  // Group unpaid/partial invoices ("البضاعة الدين") per customer
-  const customerDebtMap = useMemo(() => {
-    const map: Record<string, { totalDebtUsd: number; totalDebtSyp: number; invoices: any[] }> = {};
-    invoices.forEach(inv => {
-      if (inv.customer_id && Number(inv.remaining_debt_usd) > 0) {
-        if (!map[inv.customer_id]) {
-          map[inv.customer_id] = { totalDebtUsd: 0, totalDebtSyp: 0, invoices: [] };
-        }
-        map[inv.customer_id].totalDebtUsd += Number(inv.remaining_debt_usd);
-        map[inv.customer_id].totalDebtSyp += Number(inv.remaining_debt_syp);
-        map[inv.customer_id].invoices.push(inv);
-      }
-    });
-    return map;
-  }, [invoices]);
 
   // 2. FORM ACTIONS: CUSTOMER
   const handleOpenCustAdd = () => {
@@ -241,7 +261,63 @@ export const CustomerAndSupplierView: React.FC = () => {
     setSupplierToDelete(null);
   };
 
-  if (loadingCustomers || loadingSuppliers) {
+  // 4. DEBT PAYMENT
+  const handleDebtPaySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingInvoice) return;
+    const payVal = parseFloat(debtPayAmountUsd);
+    if (isNaN(payVal) || payVal <= 0 || payVal > Number(payingInvoice.remaining_debt_usd)) {
+      toast.error('الرجاء إدخال قيمة صحيحة لا تتجاوز الديون المتبقية للفاتورة');
+      return;
+    }
+    try {
+      await recordDebtPayment({ invoiceId: payingInvoice.id, amountUsd: payVal });
+      toast.success('تم تسجيل دفعة تسديد ذمة الدين بنجاح وتحديث الحساب المالي');
+      setPayingInvoice(null);
+      setDebtPayAmountUsd('');
+    } catch (err) {}
+  };
+
+  // 5. EDIT INVOICE ITEMS
+  const handleOpenEditInvoice = (inv: Invoice) => {
+    setEditingInvoice(inv);
+    setEditItems(inv.items.map(it => ({ ...it })));
+  };
+
+  const handleEditItemQtyChange = (index: number, value: string) => {
+    const qty = parseFloat(value) || 0;
+    setEditItems(prev => prev.map((it, i) => i === index ? { ...it, quantity: qty } : it));
+  };
+
+  const handleEditItemPriceChange = (index: number, value: string) => {
+    const price = parseFloat(value) || 0;
+    setEditItems(prev => prev.map((it, i) => i === index ? { ...it, price_usd: price } : it));
+  };
+
+  const handleRemoveEditItem = (index: number) => {
+    setEditItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveInvoiceEdit = async () => {
+    if (!editingInvoice) return;
+    const validItems = editItems.filter(it => it.quantity > 0);
+    if (validItems.length === 0) {
+      toast.error('يجب أن تحتوي الفاتورة على صنف واحد على الأقل بكمية أكبر من صفر');
+      return;
+    }
+    try {
+      await updateInvoiceItems({ invoiceId: editingInvoice.id, items: validItems });
+      setEditingInvoice(null);
+      setEditItems([]);
+    } catch (err) {}
+  };
+
+  const editItemsTotalUsd = useMemo(
+    () => editItems.reduce((sum, it) => sum + (Number(it.quantity) || 0) * (Number(it.price_usd) || 0), 0),
+    [editItems]
+  );
+
+  if (loadingCustomers || loadingSuppliers || loadingSales) {
     return <PageSkeleton />;
   }
 
@@ -325,8 +401,15 @@ export const CustomerAndSupplierView: React.FC = () => {
                   c.customer_type === 'wholesale' ? 'border-indigo-500/35' :
                   c.customer_type === 'vip' ? 'border-pink-500/35' : 'border-emerald-500/35';
 
+                const debtInfo = customerDebtMap[c.id];
+                const hasDebt = debtInfo && debtInfo.totalDebtUsd > 0.001;
+
                 return (
-                  <div key={c.id} className={`bg-slate-900 border ${accentColor} rounded-2xl overflow-hidden flex flex-col justify-between hover:border-slate-700 transition font-bold text-right`}>
+                  <div
+                    key={c.id}
+                    onClick={() => setViewingCustomer(c)}
+                    className={`bg-slate-900 border ${hasDebt ? 'border-rose-500/40' : accentColor} rounded-2xl overflow-hidden flex flex-col justify-between hover:border-slate-700 transition font-bold text-right cursor-pointer`}
+                  >
                     
                     <div className="p-4 space-y-4">
                       <div className="flex justify-between items-center text-[10px]">
@@ -375,57 +458,20 @@ export const CustomerAndSupplierView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Registered debt / goods on credit for this customer */}
-                      {customerDebtMap[c.id] && (
-                        <div className="border border-rose-500/20 bg-rose-500/5 rounded-xl p-2.5 space-y-2">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedDebtCustomerId(prev => (prev === c.id ? null : c.id))}
-                            className="w-full flex justify-between items-center text-[10px] cursor-pointer"
-                          >
-                            <span className="flex items-center gap-1 text-rose-400">
-                              {expandedDebtCustomerId === c.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              <CreditCard className="w-3.5 h-3.5" />
-                              <span>عرض البضاعة الدين المسجلة</span>
-                            </span>
-                            <span className="font-mono font-black text-rose-400">${customerDebtMap[c.id].totalDebtUsd.toFixed(2)}</span>
-                          </button>
-
-                          {expandedDebtCustomerId === c.id && (
-                            <div className="space-y-2 pt-2 border-t border-rose-500/10 max-h-56 overflow-y-auto">
-                              {customerDebtMap[c.id].invoices.map(inv => (
-                                <div key={inv.id} className="bg-slate-950 border border-slate-850 rounded-lg p-2 text-[10px] space-y-1.5">
-                                  <div className="flex justify-between text-slate-500 font-mono">
-                                    <span className="text-indigo-400">{inv.invoice_number}</span>
-                                    <span>{new Date(inv.sale_date).toLocaleDateString('ar-SY')}</span>
-                                  </div>
-                                  <div className="space-y-1">
-                                    {(inv.items || []).map((item: any, idx: number) => (
-                                      <div key={idx} className="flex justify-between items-center text-slate-300">
-                                        <span className="flex items-center gap-1 truncate">
-                                          <Package className="w-3 h-3 text-slate-600 shrink-0" />
-                                          <span className="truncate">{item.product_name}</span>
-                                        </span>
-                                        <span className="font-mono shrink-0">
-                                          {Number(item.quantity).toFixed(item.is_weight ? 3 : 0)} × ${Number(item.price_usd).toFixed(2)}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <div className="flex justify-between text-rose-400 font-black border-t border-slate-850 pt-1">
-                                    <span>المتبقي على هذه الفاتورة:</span>
-                                    <span className="font-mono">${Number(inv.remaining_debt_usd).toFixed(2)}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      {/* Debt badge */}
+                      <div className={`flex items-center justify-between p-2.5 rounded-xl border ${hasDebt ? 'bg-rose-500/10 border-rose-500/20' : 'bg-slate-950 border-slate-850'}`}>
+                        <span className={`text-xs font-mono font-black ${hasDebt ? 'text-rose-400' : 'text-slate-500'}`}>
+                          {hasDebt ? `$${debtInfo.totalDebtUsd.toFixed(2)}` : '$0.00'}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                          <Wallet className="w-3.5 h-3.5" />
+                          {hasDebt ? 'دين مستحق — اضغط للتفاصيل' : 'لا يوجد دين'}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Footer Actions */}
-                    <div className="bg-slate-950 border-t border-slate-850 p-2.5 flex justify-end gap-2 shrink-0">
+                    <div className="bg-slate-950 border-t border-slate-850 p-2.5 flex justify-end gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleCustDeleteClick(c.id)}
                         className="bg-slate-900 hover:bg-slate-850 text-rose-500 text-xs px-3 py-1.5 rounded-lg border border-slate-850 hover:border-slate-800 flex items-center gap-1 cursor-pointer transition"
@@ -682,6 +728,246 @@ export const CustomerAndSupplierView: React.FC = () => {
                 تسجيل وحفظ المورد
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Debts & Invoices Modal */}
+      {viewingCustomer && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="modal-customer-debts" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full shadow-2xl text-right flex flex-col max-h-[90dvh]">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4 shrink-0">
+              <button onClick={() => { setViewingCustomer(null); setExpandedInvoiceId(null); }} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <div className="text-right">
+                <h3 className="font-black text-sm text-slate-100 flex items-center gap-2 justify-end">
+                  <span>{viewingCustomer.name}</span>
+                  <Wallet className="w-4 h-4 text-amber-400" />
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold mt-0.5">سجل الفواتير والديون الكاملة لهذا العميل</p>
+              </div>
+            </div>
+
+            {/* Summary */}
+            <div className="grid grid-cols-2 gap-3 mb-4 shrink-0">
+              <div className="bg-slate-950 border border-slate-850 p-3 rounded-xl text-center">
+                <span className="text-[9px] text-slate-500 font-bold block">إجمالي الدين المستحق</span>
+                <span className="text-lg font-black text-rose-400 font-mono block mt-1">
+                  ${(customerDebtMap[viewingCustomer.id]?.totalDebtUsd || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="bg-slate-950 border border-slate-850 p-3 rounded-xl text-center">
+                <span className="text-[9px] text-slate-500 font-bold block">عدد الفواتير</span>
+                <span className="text-lg font-black text-slate-100 font-mono block mt-1">
+                  {viewingCustomerInvoices.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Invoices list */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {viewingCustomerInvoices.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 font-bold text-xs">لا توجد فواتير مسجلة لهذا العميل</div>
+              ) : (
+                viewingCustomerInvoices.map(inv => {
+                  const hasDebt = Number(inv.remaining_debt_usd) > 0.001;
+                  const isExpanded = expandedInvoiceId === inv.id;
+                  return (
+                    <div key={inv.id} className="bg-slate-950 border border-slate-850 rounded-xl overflow-hidden">
+                      <button
+                        onClick={() => setExpandedInvoiceId(isExpanded ? null : inv.id)}
+                        className="w-full flex items-center justify-between p-3 text-xs font-bold cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            inv.payment_method === 'cash' ? 'bg-emerald-500/10 text-emerald-400' :
+                            inv.payment_method === 'debt' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'
+                          }`}>
+                            {inv.payment_method === 'cash' ? 'نقداً' : inv.payment_method === 'debt' ? 'دين' : 'جزئي'}
+                          </span>
+                        </div>
+                        <div className="text-left">
+                          <span className="font-mono text-indigo-400 block">{inv.invoice_number}</span>
+                          <span className="text-[9px] text-slate-500 block">{new Date(inv.sale_date).toLocaleDateString('ar-SY')}</span>
+                        </div>
+                        <div className="text-left">
+                          <span className="font-mono text-slate-200 block">${Number(inv.total_usd).toFixed(2)}</span>
+                          {hasDebt && (
+                            <span className="text-[9px] text-rose-400 font-mono block">متبقي: ${Number(inv.remaining_debt_usd).toFixed(2)}</span>
+                          )}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-850 p-3 space-y-3">
+                          {/* Items list */}
+                          <div className="space-y-1 text-[11px] text-slate-400">
+                            {inv.items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between">
+                                <span className="font-mono">${Number(item.quantity * item.price_usd).toFixed(2)}</span>
+                                <span>{item.product_name} × {item.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-850">
+                            {hasDebt && (
+                              <button
+                                onClick={() => { setPayingInvoice(inv); setDebtPayAmountUsd(''); }}
+                                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-550 text-white text-[11px] font-black px-3 py-2 rounded-lg cursor-pointer transition"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>دفع الدين (كامل أو جزئي)</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenEditInvoice(inv)}
+                              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-850 text-amber-400 text-[11px] font-black px-3 py-2 rounded-lg border border-slate-800 cursor-pointer transition"
+                            >
+                              <FileEdit className="w-3.5 h-3.5" />
+                              <span>تعديل المنتجات المُباعة</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debt payment Form Modal */}
+      {payingInvoice && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4" id="crm-debt-payment-modal" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <button onClick={() => setPayingInvoice(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-black text-sm text-slate-100 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-indigo-400 animate-pulse" />
+                <span>تسديد دين فاتورة العميل</span>
+              </h3>
+            </div>
+
+            <form onSubmit={handleDebtPaySubmit} className="space-y-4 font-bold text-xs text-slate-300">
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1">
+                <p>الفاتورة: <span className="text-indigo-400 font-mono">{payingInvoice.invoice_number}</span></p>
+                <p>الزبون: <span className="text-slate-100">{payingInvoice.customer_name}</span></p>
+                <p>المستحق الدفتري: <span className="text-rose-400 font-mono font-black">${Number(payingInvoice.remaining_debt_usd).toFixed(2)} ({Number(payingInvoice.remaining_debt_syp).toLocaleString()} ل.س)</span></p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-400">قيمة دفعة الصرف المستلمة ($) — يمكن أن تكون كاملة أو جزئية:</label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  max={Number(payingInvoice.remaining_debt_usd)}
+                  required
+                  value={debtPayAmountUsd}
+                  onChange={(e) => setDebtPayAmountUsd(e.target.value)}
+                  className="w-full text-center text-3xl font-black text-slate-100 bg-slate-950 border border-slate-850 rounded-xl p-3 focus:outline-none focus:border-indigo-500"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setDebtPayAmountUsd(String(payingInvoice.remaining_debt_usd))}
+                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold cursor-pointer"
+                >
+                  تعبئة كامل المبلغ المستحق تلقائياً
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer"
+              >
+                تثبيت وقيد الدفعة فوراً
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Invoice Items Modal */}
+      {editingInvoice && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[60] p-4" id="crm-edit-invoice-modal" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl text-right flex flex-col max-h-[90dvh]">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4 shrink-0">
+              <button onClick={() => { setEditingInvoice(null); setEditItems([]); }} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-black text-sm text-slate-100 flex items-center gap-2">
+                <FileEdit className="w-5 h-5 text-amber-400" />
+                <span>تعديل منتجات فاتورة {editingInvoice.invoice_number}</span>
+              </h3>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {editItems.map((item, idx) => (
+                <div key={idx} className="bg-slate-950 border border-slate-850 rounded-xl p-3 flex items-center gap-2">
+                  <button
+                    onClick={() => handleRemoveEditItem(idx)}
+                    className="text-rose-500 hover:text-rose-400 p-1.5 shrink-0 cursor-pointer"
+                    title="حذف الصنف من الفاتورة"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-bold text-slate-100 block truncate">{item.product_name}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <label className="text-[9px] text-slate-500">الكمية</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={item.quantity}
+                      onChange={(e) => handleEditItemQtyChange(idx, e.target.value)}
+                      className="w-16 bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-center font-mono text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <label className="text-[9px] text-slate-500">السعر $</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={item.price_usd}
+                      onChange={(e) => handleEditItemPriceChange(idx, e.target.value)}
+                      className="w-16 bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-center font-mono text-xs text-slate-100 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              ))}
+              {editItems.length === 0 && (
+                <div className="text-center py-8 text-slate-500 font-bold text-xs">لا توجد أصناف — لا يمكن حفظ فاتورة فارغة</div>
+              )}
+            </div>
+
+            <div className="shrink-0 pt-4 border-t border-slate-850 mt-3 space-y-3">
+              <div className="flex justify-between items-center text-xs font-black">
+                <span className="text-slate-400">الإجمالي الجديد بعد التعديل:</span>
+                <span className="text-emerald-400 font-mono text-base">${editItemsTotalUsd.toFixed(2)}</span>
+              </div>
+              <p className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/10 rounded-lg p-2">
+                ⚠️ سيُعاد حساب الربح والدين المتبقي تلقائياً، وسيُطابَق فرق الكميات مع المخزون فوراً (زيادة تخصم إضافياً، ونقصان يُعيد للمخزون).
+              </p>
+              <button
+                onClick={handleSaveInvoiceEdit}
+                disabled={isUpdatingInvoice}
+                className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isUpdatingInvoice ? 'جاري الحفظ...' : 'حفظ التعديلات وتحديث المخزون'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

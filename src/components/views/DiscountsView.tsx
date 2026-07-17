@@ -7,7 +7,7 @@ import { BadgePercent, PlusCircle, Trash2, ShieldCheck, ShieldAlert, Calendar, D
 import { toast } from 'sonner';
 
 export function DiscountsView() {
-  const { discounts, addDiscount, toggleDiscount, deleteDiscount, isLoading } = useDiscounts();
+  const { discounts, addDiscount, toggleDiscount, deleteDiscount, isLoading, isAdding: isSavingDiscount } = useDiscounts();
   const { products } = useProducts();
 
   const [showForm, setShowForm] = useState(false);
@@ -27,6 +27,7 @@ export function DiscountsView() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingDiscount) return; // منع الإرسال المزدوج
     if (!name.trim()) {
       toast.error('الرجاء إدخال اسم العرض الترويجي');
       return;
@@ -241,9 +242,10 @@ export function DiscountsView() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="submit"
-              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer"
+              disabled={isSavingDiscount}
+              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              حفظ العرض الترويجي
+              {isSavingDiscount ? 'جاري الحفظ...' : 'حفظ العرض الترويجي'}
             </button>
           </div>
         </form>

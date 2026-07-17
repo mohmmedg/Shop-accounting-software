@@ -6,7 +6,7 @@ import { UserSquare2, PlusCircle, Search, Trash2, Edit2, Phone, BadgePercent, Sh
 import { toast } from 'sonner';
 
 export function EmployeesView() {
-  const { employees, addEmployee, updateEmployee, deleteEmployee, isLoading } = useEmployees();
+  const { employees, addEmployee, updateEmployee, deleteEmployee, isLoading, isAdding: isSavingEmployee, isUpdating: isUpdatingEmployee } = useEmployees();
 
   const [showForm, setShowForm] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
@@ -52,6 +52,7 @@ export function EmployeesView() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingEmployee || isUpdatingEmployee) return; // منع الإرسال المزدوج
     if (!name.trim()) {
       toast.error('الرجاء إدخال اسم الموظف');
       return;
@@ -335,9 +336,10 @@ export function EmployeesView() {
             </button>
             <button
               type="submit"
-              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer"
+              disabled={isSavingEmployee || isUpdatingEmployee}
+              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              حفظ بيانات الموظف
+              {(isSavingEmployee || isUpdatingEmployee) ? 'جاري الحفظ...' : 'حفظ بيانات الموظف'}
             </button>
           </div>
         </form>

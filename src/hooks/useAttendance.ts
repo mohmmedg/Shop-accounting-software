@@ -152,5 +152,6 @@ export function useAttendance() {
     addManualAttendance: addManualAttendance.mutateAsync,
     isCheckingIn: checkInEmployee.isPending,
     isCheckingOut: checkOutEmployee.isPending,
+    isAddingManual: addManualAttendance.isPending,
   };
 }

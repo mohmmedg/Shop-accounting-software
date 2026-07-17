@@ -31,7 +31,7 @@ interface CartItem {
 export const POSView: React.FC = () => {
   const { products, isLoading: loadingProducts } = useProducts();
   const { customers, isLoading: loadingCustomers } = useCustomers();
-  const { createInvoice, isLoading: submittingSale } = useSales();
+  const { createInvoice, isCreating: submittingSale } = useSales();
   const { settings, isLoading: loadingSettings } = useSettings();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -320,6 +320,7 @@ export const POSView: React.FC = () => {
 
   // COMMIT SALE INVOICE
   const handleCommitSale = async (paymentMethod: 'cash' | 'debt') => {
+    if (submittingSale) return; // منع تسجيل نفس الفاتورة مرتين عند الضغط المتكرر
     const paidUsd = paymentMethod === 'cash' ? parseFloat(amountPaidUsdInput) || totals.totalUsd : 0;
     const paidSyp = Math.round(paidUsd * (settings?.usd_to_syp_rate || 15000));
     const remainingUsd = Math.max(0, totals.totalUsd - paidUsd);
@@ -885,17 +886,18 @@ export const POSView: React.FC = () => {
               <div className="space-y-2 pt-2">
                 <button
                   onClick={() => handleCommitSale('cash')}
-                  className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer"
+                  disabled={submittingSale}
+                  className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3.5 rounded-xl shadow-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  تأكيد سداد الفاتورة نقداً
+                  {submittingSale ? 'جاري تسجيل الفاتورة...' : 'تأكيد سداد الفاتورة نقداً'}
                 </button>
                 
                 <button
                   onClick={() => handleCommitSale('debt')}
-                  disabled={!selectedCustomerId}
-                  className="w-full bg-slate-950 hover:bg-slate-900 text-rose-500 border border-slate-850 hover:border-rose-500/20 py-3 rounded-xl transition disabled:opacity-30 cursor-pointer"
+                  disabled={!selectedCustomerId || submittingSale}
+                  className="w-full bg-slate-950 hover:bg-slate-900 text-rose-500 border border-slate-850 hover:border-rose-500/20 py-3 rounded-xl transition disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  تسجيل الفاتورة على الحساب (ذمم ديون)
+                  {submittingSale ? 'جاري تسجيل الفاتورة...' : 'تسجيل الفاتورة على الحساب (ذمم ديون)'}
                 </button>
               </div>
             </div>

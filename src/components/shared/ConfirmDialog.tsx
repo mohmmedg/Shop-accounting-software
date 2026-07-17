@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 interface ConfirmDialogProps {
@@ -22,13 +22,30 @@ export function ConfirmDialog({
   onConfirm,
   onCancel
 }: ConfirmDialogProps) {
+  // منع الضغط المتكرر على زر التأكيد أثناء تنفيذ العملية (يحمي كل نوافذ الحذف/التأكيد في التطبيق دفعة واحدة)
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) setIsConfirming(false);
+  }, [isOpen]);
+
   if (!isOpen) return null;
-  
+
   const colors = {
     danger: { bg: 'bg-red-600', hover: 'hover:bg-red-700', icon: 'text-red-500', border: 'border-red-500/20' },
     warning: { bg: 'bg-amber-500', hover: 'hover:bg-amber-600', icon: 'text-amber-500', border: 'border-amber-500/20' },
     info: { bg: 'bg-blue-600', hover: 'hover:bg-blue-700', icon: 'text-blue-500', border: 'border-blue-500/20' },
   }[variant];
+
+  const handleConfirmClick = async () => {
+    if (isConfirming) return; // تجاهل أي ضغطة إضافية أثناء التنفيذ
+    setIsConfirming(true);
+    try {
+      await onConfirm();
+    } finally {
+      setIsConfirming(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 p-4" dir="rtl">
@@ -45,15 +62,17 @@ export function ConfirmDialog({
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-slate-300 bg-slate-800 hover:bg-slate-700 font-bold text-xs transition border border-slate-700"
+            disabled={isConfirming}
+            className="px-4 py-2.5 rounded-xl text-slate-300 bg-slate-800 hover:bg-slate-700 font-bold text-xs transition border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelLabel}
           </button>
           <button
-            onClick={onConfirm}
-            className={`px-4 py-2.5 rounded-xl text-white font-bold text-xs transition shadow-lg ${colors.bg} ${colors.hover}`}
+            onClick={handleConfirmClick}
+            disabled={isConfirming}
+            className={`px-4 py-2.5 rounded-xl text-white font-bold text-xs transition shadow-lg ${colors.bg} ${colors.hover} disabled:opacity-60 disabled:cursor-not-allowed`}
           >
-            {confirmLabel}
+            {isConfirming ? 'جاري التنفيذ...' : confirmLabel}
           </button>
         </div>
       </div>

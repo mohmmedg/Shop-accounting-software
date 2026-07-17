@@ -23,7 +23,18 @@ import {
 import { toast } from 'sonner';
 
 export const InvoicesView: React.FC = () => {
-  const { invoices, isLoading: loadingSales, recordDebtPayment, updateInvoiceTotal, updateInvoiceItems, deleteInvoice } = useSales();
+  const {
+    invoices,
+    isLoading: loadingSales,
+    recordDebtPayment,
+    isPayingDebt,
+    updateInvoiceTotal,
+    isUpdatingInvoice,
+    updateInvoiceItems,
+    isUpdatingInvoiceItems,
+    deleteInvoice,
+    isDeletingInvoice
+  } = useSales();
   const { settings, isLoading: loadingSettings } = useSettings();
   const { products } = useProducts();
 
@@ -98,6 +109,7 @@ export const InvoicesView: React.FC = () => {
 
   const handleDebtPaySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isPayingDebt) return; // منع الإرسال المزدوج
     if (!payingInvoice) return;
     const payVal = parseFloat(debtPayAmountUsd);
     if (isNaN(payVal) || payVal <= 0 || payVal > Number(payingInvoice.remaining_debt_usd)) {
@@ -119,6 +131,7 @@ export const InvoicesView: React.FC = () => {
 
   const handleEditInvoiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUpdatingInvoice) return; // منع الإرسال المزدوج
     if (!editingInvoice) return;
     const newTotal = parseFloat(editTotalUsd);
     if (isNaN(newTotal) || newTotal < 0) {
@@ -209,6 +222,7 @@ export const InvoicesView: React.FC = () => {
     : editItemsSubtotal;
 
   const handleSaveEditedItems = async () => {
+    if (isUpdatingInvoiceItems) return; // منع الإرسال المزدوج
     if (!editingItemsInvoice) return;
     if (editItemsList.length === 0) {
       toast.error('يجب أن تحتوي الفاتورة على منتج واحد على الأقل');
@@ -489,9 +503,10 @@ export const InvoicesView: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer"
+                disabled={isPayingDebt}
+                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                تثبيت وقيد الدفعة فورا
+                {isPayingDebt ? 'جاري تثبيت الدفعة...' : 'تثبيت وقيد الدفعة فورا'}
               </button>
             </form>
           </div>
@@ -705,9 +720,10 @@ export const InvoicesView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleSaveEditedItems}
-                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer"
+                disabled={isUpdatingInvoiceItems}
+                className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                حفظ التعديلات على المنتجات
+                {isUpdatingInvoiceItems ? 'جاري حفظ التعديلات...' : 'حفظ التعديلات على المنتجات'}
               </button>
             </div>
           </div>
@@ -752,9 +768,10 @@ export const InvoicesView: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full bg-amber-600 hover:bg-amber-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer"
+                disabled={isUpdatingInvoice}
+                className="w-full bg-amber-600 hover:bg-amber-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                حفظ السعر الجديد
+                {isUpdatingInvoice ? 'جاري الحفظ...' : 'حفظ السعر الجديد'}
               </button>
             </form>
           </div>

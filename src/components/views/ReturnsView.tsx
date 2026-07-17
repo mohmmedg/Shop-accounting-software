@@ -7,7 +7,7 @@ import { Undo2, Search, PlusCircle, Calendar, DollarSign, RefreshCw, FileText, S
 import { toast } from 'sonner';
 
 export function ReturnsView() {
-  const { returns, addReturn, isLoading: loadingReturns } = useReturns();
+  const { returns, addReturn, isLoading: loadingReturns, isAdding: isAddingReturn } = useReturns();
   const { invoices, isLoading: loadingSales } = useSales();
   const { settings } = useSettings();
 
@@ -52,6 +52,7 @@ export function ReturnsView() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAddingReturn) return; // منع الإرسال المزدوج عند الضغط أكثر من مرة
     if (!selectedInvoiceId) {
       toast.error('الرجاء اختيار الفاتورة أولاً');
       return;
@@ -339,9 +340,10 @@ export function ReturnsView() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="submit"
-              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs transition cursor-pointer"
+              disabled={isAddingReturn}
+              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              تسجيل وحفظ المرتجع
+              {isAddingReturn ? 'جاري الحفظ...' : 'تسجيل وحفظ المرتجع'}
             </button>
           </div>
         </form>

@@ -44,9 +44,8 @@ export const NewSaleView: React.FC = () => {
   const [itemTargetAmountSyp, setItemTargetAmountSyp] = useState('50000');
   const [customPriceUsd, setCustomPriceUsd] = useState('');
 
-  // Invoice Adjustments
-  const [discountSyp, setDiscountSyp] = useState('0');
-  const [extraFeeUsd, setExtraFeeUsd] = useState('0');
+  // Invoice Adjustments — تعديل مباشر على السعر النهائي بدلاً من إدخال خصم/إضافة منفصلين
+  const [finalPriceInput, setFinalPriceInput] = useState(''); // فارغ = لا يوجد تعديل يدوي، يُستخدم المجموع الفرعي كما هو
 
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'debt' | 'partial'>('cash');
@@ -221,30 +220,38 @@ export const NewSaleView: React.FC = () => {
 
   // BASKET MATHEMATICS
   const totals = useMemo(() => {
+    const rate = settings?.usd_to_syp_rate || 15000;
     const subtotalUsd = basket.reduce((acc, item) => acc + item.quantity * item.price_usd, 0);
-    const subtotalSyp = Math.round(subtotalUsd * (settings?.usd_to_syp_rate || 15000));
-    
-    const discSyp = parseFloat(discountSyp) || 0;
-    const fee = parseFloat(extraFeeUsd) || 0;
-    const feeSyp = Math.round(fee * (settings?.usd_to_syp_rate || 15000));
-    
-    const finalSyp = Math.max(0, subtotalSyp - discSyp + feeSyp);
-    
-    const discUsd = discSyp / (settings?.usd_to_syp_rate || 15000);
-    const finalUsd = Math.max(0, subtotalUsd - discUsd + fee);
+    const subtotalSyp = Math.round(subtotalUsd * rate);
+
+    // السعر النهائي: إن لم يُعدّله المستخدم يدوياً يبقى مطابقاً للمجموع الفرعي
+    const hasOverride = finalPriceInput.trim() !== '';
+    const rawFinalUsd = hasOverride ? (parseFloat(finalPriceInput) || 0) : subtotalUsd;
+    const finalUsd = Math.max(0, rawFinalUsd);
+    const finalSyp = Math.round(finalUsd * rate);
+
+    // الفرق بين السعر النهائي والمجموع الفرعي: سالب = خصم، موجب = إضافة/رسوم
+    const diffUsd = finalUsd - subtotalUsd;
+    const discountUsd = diffUsd < 0 ? Math.abs(diffUsd) : 0;
+    const discountSyp = Math.round(discountUsd * rate);
+    const additionUsd = diffUsd > 0 ? diffUsd : 0;
+    const additionSyp = Math.round(additionUsd * rate);
 
     const totalCostUsd = basket.reduce((acc, item) => acc + item.quantity * (item.product.cost_usd || 0), 0);
-    const totalCostSyp = Math.round(totalCostUsd * (settings?.usd_to_syp_rate || 15000));
-    
+    const totalCostSyp = Math.round(totalCostUsd * rate);
+
     const expectedProfitUsd = Math.max(0, finalUsd - totalCostUsd);
     const expectedProfitSyp = Math.max(0, finalSyp - totalCostSyp);
 
     return {
       subtotalUsd,
       subtotalSyp,
-      discountSyp: discSyp,
-      discountUsd: discUsd,
-      extraFeeUsd: fee,
+      hasOverride,
+      diffUsd,
+      discountSyp,
+      discountUsd,
+      additionSyp,
+      additionUsd,
       finalUsd,
       finalSyp,
       expectedProfitUsd,
@@ -252,7 +259,7 @@ export const NewSaleView: React.FC = () => {
       totalCostUsd,
       totalCostSyp
     };
-  }, [basket, discountSyp, extraFeeUsd, settings]);
+  }, [basket, finalPriceInput, settings]);
 
   const remainingDebts = useMemo(() => {
     let paidUsd = totals.finalUsd;
@@ -314,8 +321,7 @@ export const NewSaleView: React.FC = () => {
       toast.success('تم تسجيل وحفظ الفاتورة النهائية بنجاح');
       setBasket([]);
       setSelectedCustomerId('');
-      setDiscountSyp('0');
-      setExtraFeeUsd('0');
+      setFinalPriceInput('');
       setPartialAmountPaidUsd('');
       setPaymentMethod('cash');
       setShowConfirmDialog(false);
@@ -622,30 +628,54 @@ export const NewSaleView: React.FC = () => {
                 )}
               </div>
 
-              {/* Adjustments (discounts or additions) */}
-              <div className="grid grid-cols-2 gap-3 border-t border-slate-850 pt-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500">خصم الفاتورة (ل.س)</label>
+              {/* Direct final-price editor — يحسب الخصم أو الإضافة تلقائياً من الفرق مع المجموع الفرعي */}
+              <div className="border-t border-slate-850 pt-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-slate-500">عدّل السعر النهائي مباشرة ($)</label>
+                  {totals.hasOverride && (
+                    <button
+                      type="button"
+                      onClick={() => setFinalPriceInput('')}
+                      className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 underline decoration-dotted cursor-pointer"
+                    >
+                      ↺ إعادة لسعر السلة الأساسي
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
                   <input
                     type="number"
+                    step="0.01"
                     min="0"
-                    placeholder="0"
-                    value={discountSyp === '0' ? '' : discountSyp}
-                    onChange={(e) => setDiscountSyp(e.target.value ? e.target.value : '0')}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 font-mono font-black text-center text-rose-400 focus:outline-none"
+                    placeholder={totals.subtotalUsd.toFixed(2)}
+                    value={finalPriceInput}
+                    onChange={(e) => setFinalPriceInput(e.target.value)}
+                    className={`w-full text-center text-3xl font-black bg-slate-950 border rounded-xl p-3 focus:outline-none transition-colors ${
+                      totals.diffUsd < -0.001
+                        ? 'text-rose-400 border-rose-500/30 focus:border-rose-500'
+                        : totals.diffUsd > 0.001
+                          ? 'text-emerald-400 border-emerald-500/30 focus:border-emerald-500'
+                          : 'text-slate-100 border-slate-850 focus:border-indigo-500'
+                    }`}
                   />
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-black">$</span>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500">رسوم أو إضافات ($)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={extraFeeUsd}
-                    onChange={(e) => setExtraFeeUsd(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 font-mono font-black text-center text-slate-100 focus:outline-none"
-                  />
-                </div>
+
+                {/* Live feedback badge: يوضّح تلقائياً هل هذا خصم أم إضافة وبكم */}
+                {totals.diffUsd < -0.001 ? (
+                  <div className="flex justify-between items-center bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2 text-[10px] font-black text-rose-400">
+                    <span>🔻 خصم مُطبّق على الفاتورة</span>
+                    <span className="font-mono">-${totals.discountUsd.toFixed(2)} <span className="text-slate-500 font-bold">(-{totals.discountSyp.toLocaleString()} ل.س)</span></span>
+                  </div>
+                ) : totals.diffUsd > 0.001 ? (
+                  <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-[10px] font-black text-emerald-400">
+                    <span>🔺 إضافة/رسوم مُطبّقة على الفاتورة</span>
+                    <span className="font-mono">+${totals.additionUsd.toFixed(2)} <span className="text-slate-500 font-bold">(+{totals.additionSyp.toLocaleString()} ل.س)</span></span>
+                  </div>
+                ) : (
+                  <div className="text-center text-[9px] font-bold text-slate-600">بدون أي تعديل — السعر النهائي مطابق لمجموع السلة</div>
+                )}
               </div>
 
               {/* Payment Methods */}
@@ -732,14 +762,16 @@ export const NewSaleView: React.FC = () => {
                 </div>
                 {totals.discountSyp > 0 && (
                   <div className="flex justify-between text-[10px] font-bold text-rose-500">
-                    <span>خصم الفاتورة (ل.س):</span>
+                    <span>خصم الفاتورة:</span>
                     <span className="font-mono">-{totals.discountSyp.toLocaleString()} ل.س <span className="text-[9px] text-slate-500">(≈ ${totals.discountUsd.toFixed(2)})</span></span>
                   </div>
                 )}
-                <div className="flex justify-between text-[10px] font-bold text-indigo-400">
-                  <span>الإضافات والرسوم:</span>
-                  <span className="font-mono">+${totals.extraFeeUsd.toFixed(2)}</span>
-                </div>
+                {totals.additionSyp > 0 && (
+                  <div className="flex justify-between text-[10px] font-bold text-emerald-400">
+                    <span>الإضافات والرسوم:</span>
+                    <span className="font-mono">+{totals.additionSyp.toLocaleString()} ل.س <span className="text-[9px] text-slate-500">(≈ ${totals.additionUsd.toFixed(2)})</span></span>
+                  </div>
+                )}
                 <div className="border-t border-slate-850 my-1.5"></div>
                 <div className="flex justify-between text-xs font-black text-slate-200">
                   <span>المجموع النهائي بالدولار:</span>

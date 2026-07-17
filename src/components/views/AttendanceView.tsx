@@ -6,7 +6,7 @@ import { CalendarCheck, Barcode, PlusCircle, Search, ClipboardList, CheckCircle,
 import { toast } from 'sonner';
 
 export function AttendanceView() {
-  const { attendance, checkInEmployee, checkOutEmployee, addManualAttendance, isLoading } = useAttendance();
+  const { attendance, checkInEmployee, checkOutEmployee, addManualAttendance, isLoading, isCheckingIn, isCheckingOut, isAddingManual } = useAttendance();
   const { employees } = useEmployees();
 
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -23,6 +23,7 @@ export function AttendanceView() {
   // Handle barcode scanning manually entered
   const handleBarcodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCheckingIn || isCheckingOut) return; // منع تسجيل نفس الحضور مرتين
     if (!barcodeInput.trim()) return;
 
     // Find employee with barcode
@@ -51,6 +52,7 @@ export function AttendanceView() {
 
   const handleManualSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAddingManual) return; // منع الإرسال المزدوج
     if (!selectedEmployeeId) {
       toast.error('الرجاء اختيار الموظف أولاً');
       return;
@@ -164,7 +166,8 @@ export function AttendanceView() {
             placeholder="امسح الباركود هنا أو اكتبه..."
             value={barcodeInput}
             onChange={(e) => setBarcodeInput(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 pl-12 text-center font-bold text-sm text-indigo-400 focus:outline-none focus:border-indigo-500 transition"
+            disabled={isCheckingIn || isCheckingOut}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 pl-12 text-center font-bold text-sm text-indigo-400 focus:outline-none focus:border-indigo-500 transition disabled:opacity-50"
           />
           <Barcode className="w-5 h-5 text-slate-600 absolute left-4 top-3.5" />
         </form>
@@ -245,9 +248,10 @@ export function AttendanceView() {
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="submit"
-              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer"
+              disabled={isAddingManual}
+              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white font-black text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              حفظ السجل
+              {isAddingManual ? 'جاري الحفظ...' : 'حفظ السجل'}
             </button>
           </div>
         </form>

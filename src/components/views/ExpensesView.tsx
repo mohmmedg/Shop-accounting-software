@@ -38,7 +38,7 @@ const reverseCategoryMap: Record<string, string> = {
 };
 
 export const ExpensesView: React.FC = () => {
-  const { expenses, isLoading, addExpense, deleteExpense } = useExpenses();
+  const { expenses, isLoading, addExpense, deleteExpense, isAdding: isSavingExpense } = useExpenses();
   const { settings } = useSettings();
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -74,6 +74,7 @@ export const ExpensesView: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingExpense) return; // منع الإرسال المزدوج
     const syp = parseFloat(amountSyp) || 0;
     if (syp <= 0) {
       toast.error('الرجاء إدخال مبلغ صحيح وموجب بالليرة السورية');
@@ -318,9 +319,10 @@ export const ExpensesView: React.FC = () => {
 
                 <button
                   type="submit"
-                  className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer"
+                  disabled={isSavingExpense}
+                  className="w-full bg-indigo-600 hover:bg-indigo-550 text-white font-black py-3 rounded-xl shadow-lg transition active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  قيد وإثبات المصروف
+                  {isSavingExpense ? 'جاري القيد...' : 'قيد وإثبات المصروف'}
                 </button>
               </form>
             </motion.div>

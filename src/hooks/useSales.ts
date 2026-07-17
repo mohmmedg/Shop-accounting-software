@@ -382,213 +382,113 @@ export function useSales() {
     },
   });
 
-  // Edit the overall (total) price of an already-issued invoice — recomputes remaining debt & customer stats
-  const updateInvoiceTotal = useMutation({
-    mutationFn: async ({ invoiceId, newTotalUsd }: { invoiceId: string; newTotalUsd: number }) => {
-      const activeRate = settings?.usd_to_syp_rate ?? 15000;
-
-      const { data: invoice, error: fetchError } = await supabase
+  // تعديل عناصر الفاتورة (المنتجات المُباعة) — يعيد حساب الإجمالي والربح والدين المتبقي،
+  // ويُطابق فرق الكميات مع المخزون تلقائياً (زيادة الكمية تخصم إضافياً من المستودع، ونقصانها يُعيد للمخزون)
+  const updateInvoiceItems = useMutation({
+    mutationFn: async ({ invoiceId, items }: { invoiceId: string; items: Invoice['items'] }) => {
+      const { data: oldInvoice, error: fetchError } = await supabase
         .from('invoices')
         .select('*')
         .eq('id', invoiceId)
         .single();
-      if (fetchError || !invoice) throw new Error('لم يتم العثور على الفاتورة');
+      if (fetchError || !oldInvoice) throw new Error('لم يتم العثور على الفاتورة');
 
-      const oldTotalUsd = Number(invoice.total_usd);
-      const paidUsd = Number(invoice.paid_usd);
-      const newTotalSyp = Math.round(newTotalUsd * activeRate);
+      const newTotalUsd = items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.price_usd), 0);
+      const newTotalSyp = items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.price_syp), 0);
+      const newProfitUsd = items.reduce((sum, it) => sum + (Number(it.price_usd) - Number(it.cost_usd || 0)) * Number(it.quantity), 0);
+      const activeRate = settings?.usd_to_syp_rate ?? 15000;
+      const newProfitSyp = Math.round(newProfitUsd * activeRate);
 
+      const paidUsd = Number(oldInvoice.paid_usd);
       const newRemainingDebtUsd = Math.max(0, newTotalUsd - paidUsd);
       const newRemainingDebtSyp = Math.round(newRemainingDebtUsd * activeRate);
-      const newMethod: PaymentMethod = newRemainingDebtUsd <= 0 ? 'cash' : (paidUsd > 0 ? 'partial' : 'debt');
+      const newPaymentMethod: PaymentMethod = newRemainingDebtUsd === 0 ? 'cash' : (paidUsd > 0 ? 'partial' : 'debt');
 
       const { error: updateError } = await supabase
         .from('invoices')
         .update({
+          items,
           total_usd: newTotalUsd,
           total_syp: newTotalSyp,
+          profit_usd: newProfitUsd,
+          profit_syp: newProfitSyp,
           remaining_debt_usd: newRemainingDebtUsd,
           remaining_debt_syp: newRemainingDebtSyp,
-          payment_method: newMethod,
+          payment_method: newPaymentMethod,
         })
         .eq('id', invoiceId);
       if (updateError) throw updateError;
 
-      // Reflect the price difference on the customer's cumulative purchase total
-      if (invoice.customer_id) {
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('total_purchases_usd')
-          .eq('id', invoice.customer_id)
-          .single();
-        if (customer) {
-          const diff = newTotalUsd - oldTotalUsd;
-          const newTotal = Math.max(0, Number(customer.total_purchases_usd ?? 0) + diff);
-          await supabase.from('customers').update({ total_purchases_usd: newTotal }).eq('id', invoice.customer_id);
-        }
-      }
+      // مطابقة المخزون: الفرق بين الكميات القديمة والجديدة لكل منتج
+      const oldItems: Invoice['items'] = oldInvoice.items || [];
+      const productIds = new Set([...oldItems.map(i => i.product_id), ...items.map(i => i.product_id)]);
 
-      // Audit trail
-      if (currentUser?.id) {
-        try {
-          await supabase.from('audit_logs').insert({
-            employee_id: currentUser.id,
-            employee_name: currentUser.name,
-            action_type: 'edit_invoice',
-            entity_type: 'invoice',
-            entity_id: invoiceId,
-            entity_name: invoice.invoice_number,
-            old_value: { total_usd: oldTotalUsd, total_syp: invoice.total_syp, remaining_debt_usd: invoice.remaining_debt_usd },
-            new_value: { total_usd: newTotalUsd, total_syp: newTotalSyp, remaining_debt_usd: newRemainingDebtUsd },
-            description: `تعديل السعر الإجمالي للفاتورة ${invoice.invoice_number} من $${oldTotalUsd.toFixed(2)} إلى $${newTotalUsd.toFixed(2)}`,
-          });
-        } catch (err) {
-          console.warn('Audit log failed:', err);
-        }
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
-      queryClient.invalidateQueries({ queryKey: ['audit_logs'] });
-      toast.success('تم تعديل السعر الإجمالي للفاتورة بنجاح');
-    },
-    onError: (err: any) => {
-      toast.error(`فشل تعديل الفاتورة: ${err.message}`);
-    },
-  });
+      for (const productId of productIds) {
+        const oldQty = oldItems.find(i => i.product_id === productId)?.quantity || 0;
+        const newQty = items.find(i => i.product_id === productId)?.quantity || 0;
+        const delta = newQty - oldQty; // موجب = خصم إضافي من المخزون، سالب = إعادة للمخزون
+        if (delta === 0) continue;
 
-  // Permanently delete an invoice and reverse every linked transaction (stock, cash, customer, employee stats)
-  const deleteInvoice = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      const { data: invoice, error: fetchError } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('id', invoiceId)
-        .single();
-      if (fetchError || !invoice) throw new Error('لم يتم العثور على الفاتورة');
+        const productName = items.find(i => i.product_id === productId)?.product_name
+          || oldItems.find(i => i.product_id === productId)?.product_name || '';
 
-      // 1. Remove linked sale rows & debt-payment history for this invoice
-      await supabase.from('sales').delete().eq('invoice_id', invoiceId);
-      await supabase.from('debt_payments').delete().eq('invoice_id', invoiceId);
-
-      // 2. Restore stock for every item sold on this invoice
-      const items = (invoice.items || []) as any[];
-      for (const item of items) {
         const { data: product } = await supabase
           .from('products')
           .select('quantity, stock_grams, sold_by_weight')
-          .eq('id', item.product_id)
+          .eq('id', productId)
           .single();
 
-        if (product) {
-          const currentQty = product.quantity ?? 0;
-          const newQty = currentQty + Number(item.quantity);
-          const currentGrams = product.stock_grams !== undefined ? product.stock_grams : (product.sold_by_weight ? currentQty * 1000 : undefined);
-          const newGrams = currentGrams !== undefined ? currentGrams + Number(item.quantity) * 1000 : undefined;
+        const currentQty = product?.quantity ?? 0;
+        const newProductQty = Math.max(0, currentQty - delta);
 
-          await supabase.from('products').update({
-            quantity: newQty,
-            stock_grams: newGrams,
-            updated_at: new Date().toISOString(),
-          }).eq('id', item.product_id);
+        const currentGrams = product?.stock_grams !== undefined ? product.stock_grams : (product?.sold_by_weight ? currentQty * 1000 : undefined);
+        const newGrams = currentGrams !== undefined ? Math.max(0, currentGrams - (delta * 1000)) : undefined;
 
-          await supabase.from('inventory_movements').insert({
-            product_id: item.product_id,
-            product_name: item.product_name,
-            movement_type: 'in',
-            quantity_before: currentQty,
-            quantity_after: newQty,
-            change_amount: Number(item.quantity),
-            reference_id: invoice.invoice_number,
-            date: new Date().toISOString(),
-          });
-        }
+        await supabase
+          .from('products')
+          .update({ quantity: newProductQty, stock_grams: newGrams, updated_at: new Date().toISOString() })
+          .eq('id', productId);
+
+        await supabase.from('inventory_movements').insert({
+          product_id: productId,
+          product_name: productName,
+          movement_type: 'adjustment',
+          quantity_before: currentQty,
+          quantity_after: newProductQty,
+          change_amount: -delta,
+          reference_id: `تعديل فاتورة ${oldInvoice.invoice_number}`,
+          date: new Date().toISOString(),
+        });
       }
 
-      // 3. Reverse the customer's cumulative purchases & loyalty points
-      if (invoice.customer_id) {
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('total_purchases_usd, loyalty_points')
-          .eq('id', invoice.customer_id)
-          .single();
-        if (customer) {
-          const newTotal = Math.max(0, Number(customer.total_purchases_usd ?? 0) - Number(invoice.total_usd));
-          const pointsEarned = Math.floor(Number(invoice.total_usd) * 10);
-          const newPoints = Math.max(0, Number(customer.loyalty_points ?? 0) - pointsEarned);
-          const tier = newPoints >= 1000 ? 'platinum' : newPoints >= 500 ? 'gold' : newPoints >= 200 ? 'silver' : 'bronze';
+      // تعديل إجمالي مشتريات العميل بمقدار الفرق بين الإجمالي القديم والجديد
+      if (oldInvoice.customer_id) {
+        const totalDelta = newTotalUsd - Number(oldInvoice.total_usd);
+        if (totalDelta !== 0) {
+          const { data: customer } = await supabase
+            .from('customers')
+            .select('total_purchases_usd')
+            .eq('id', oldInvoice.customer_id)
+            .single();
+          const currentTotal = customer?.total_purchases_usd ?? 0;
           await supabase.from('customers').update({
-            total_purchases_usd: newTotal,
-            loyalty_points: newPoints,
-            loyalty_tier: tier,
-          }).eq('id', invoice.customer_id);
+            total_purchases_usd: Math.max(0, currentTotal + totalDelta),
+          }).eq('id', oldInvoice.customer_id);
         }
       }
 
-      // 4. Reverse the employee's recorded sales total
-      if (invoice.employee_id) {
-        const { data: emp } = await supabase.from('employees').select('total_sales_usd').eq('id', invoice.employee_id).single();
-        if (emp) {
-          await supabase.from('employees').update({
-            total_sales_usd: Math.max(0, Number(emp.total_sales_usd ?? 0) - Number(invoice.total_usd)),
-          }).eq('id', invoice.employee_id);
-        }
-      }
-
-      // 5. Reverse whatever cash was actually collected for this invoice from the open shift
-      const paidUsd = Number(invoice.paid_usd || 0);
-      const paidSyp = Number(invoice.paid_syp || 0);
-      if (paidUsd > 0 || paidSyp > 0) {
-        const { data: openShifts } = await supabase.from('cash_registers').select('*').eq('status', 'open');
-        const openShift = openShifts?.[0];
-        if (openShift) {
-          const closingUsd = (openShift.closing_balance_usd ?? openShift.opening_balance_usd) - paidUsd;
-          const closingSyp = (openShift.closing_balance_syp ?? openShift.opening_balance_syp) - paidSyp;
-          await supabase.from('cash_registers').update({
-            closing_balance_usd: closingUsd,
-            closing_balance_syp: closingSyp,
-          }).eq('id', openShift.id);
-        }
-      }
-
-      // 6. Audit trail before the invoice row is gone
-      if (currentUser?.id) {
-        try {
-          await supabase.from('audit_logs').insert({
-            employee_id: currentUser.id,
-            employee_name: currentUser.name,
-            action_type: 'cancel_invoice',
-            entity_type: 'invoice',
-            entity_id: invoiceId,
-            entity_name: invoice.invoice_number,
-            old_value: invoice,
-            new_value: null,
-            description: `حذف الفاتورة ${invoice.invoice_number} للعميل ${invoice.customer_name} بقيمة $${Number(invoice.total_usd).toFixed(2)}`,
-          });
-        } catch (err) {
-          console.warn('Audit log failed:', err);
-        }
-      }
-
-      // 7. Finally remove the invoice itself
-      const { error: deleteError } = await supabase.from('invoices').delete().eq('id', invoiceId);
-      if (deleteError) throw deleteError;
+      return { ...oldInvoice, items, total_usd: newTotalUsd, total_syp: newTotalSyp } as Invoice;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['debt_payments'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      queryClient.invalidateQueries({ queryKey: ['employees'] });
-      queryClient.invalidateQueries({ queryKey: ['cash_registers'] });
       queryClient.invalidateQueries({ queryKey: ['inventory_movements'] });
-      queryClient.invalidateQueries({ queryKey: ['audit_logs'] });
-      toast.success('تم حذف الفاتورة وعكس كافة الحركات المرتبطة بها بنجاح');
+      queryClient.invalidateQueries({ queryKey: ['debt_payments'] });
+      toast.success('تم تعديل الفاتورة وتحديث المخزون بنجاح');
     },
     onError: (err: any) => {
-      toast.error(`فشل حذف الفاتورة: ${err.message}`);
+      toast.error(`فشل تعديل الفاتورة: ${err.message}`);
     },
   });
 
@@ -601,9 +501,7 @@ export function useSales() {
     isCreating: createInvoice.isPending,
     recordDebtPayment: recordDebtPayment.mutateAsync,
     isPayingDebt: recordDebtPayment.isPending,
-    updateInvoiceTotal: updateInvoiceTotal.mutateAsync,
-    isUpdatingInvoice: updateInvoiceTotal.isPending,
-    deleteInvoice: deleteInvoice.mutateAsync,
-    isDeletingInvoice: deleteInvoice.isPending,
+    updateInvoiceItems: updateInvoiceItems.mutateAsync,
+    isUpdatingInvoice: updateInvoiceItems.isPending,
   };
 }

@@ -30,7 +30,7 @@ interface BasketItem {
 export const NewSaleView: React.FC = () => {
   const { products, isLoading: loadingProducts } = useProducts();
   const { customers, isLoading: loadingCustomers } = useCustomers();
-  const { createInvoice, isLoading: submittingSale } = useSales();
+  const { createInvoice, isCreating: submittingSale } = useSales();
   const { settings, isLoading: loadingSettings } = useSettings();
 
   const [basket, setBasket] = useState<BasketItem[]>([]);
@@ -275,6 +275,7 @@ export const NewSaleView: React.FC = () => {
 
   // SAVE INVOICE COMMITTAL
   const handleFinalSave = async () => {
+    if (submittingSale) return; // منع إرسال الفاتورة أكثر من مرة أثناء الحفظ
     if (basket.length === 0) return;
     if (paymentMethod === 'debt' && !selectedCustomerId) {
       toast.error('الرجاء اختيار العميل لحفظ هذه الفاتورة بالدين الآجل');
@@ -843,13 +844,15 @@ export const NewSaleView: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 pt-2 font-black text-xs">
               <button
                 onClick={handleFinalSave}
-                className="bg-indigo-600 hover:bg-indigo-550 text-white py-3 rounded-xl shadow cursor-pointer"
+                disabled={submittingSale}
+                className="bg-indigo-600 hover:bg-indigo-550 text-white py-3 rounded-xl shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                نعـم، تأكيـد وحفـظ
+                {submittingSale ? 'جاري الحفظ...' : 'نعـم، تأكيـد وحفـظ'}
               </button>
               <button
                 onClick={() => setShowConfirmDialog(false)}
-                className="bg-slate-950 hover:bg-slate-900 text-slate-300 py-3 rounded-xl border border-slate-850 cursor-pointer"
+                disabled={submittingSale}
+                className="bg-slate-950 hover:bg-slate-900 text-slate-300 py-3 rounded-xl border border-slate-850 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 تراجـع وإلغـاء
               </button>

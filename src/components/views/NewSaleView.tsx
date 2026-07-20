@@ -44,8 +44,28 @@ export const NewSaleView: React.FC = () => {
   const [itemTargetAmountSyp, setItemTargetAmountSyp] = useState('50000');
   const [customPriceUsd, setCustomPriceUsd] = useState('');
 
-  // Invoice Adjustments — تعديل مباشر على السعر النهائي بدلاً من إدخال خصم/إضافة منفصلين
+  // Invoice Adjustments — تعديل مباشر على السعر النهائي بالليرة السورية بدلاً من إدخال خصم/إضافة منفصلين
+  // finalPriceInput يبقى بالدولار داخلياً (هو المصدر المستخدم في كل الحسابات وإرسال الفاتورة)،
+  // لكن المستخدم لا يكتب فيه مباشرة — يكتب في finalPriceInputSyp وحده ويُشتق منه تلقائياً
   const [finalPriceInput, setFinalPriceInput] = useState(''); // فارغ = لا يوجد تعديل يدوي، يُستخدم المجموع الفرعي كما هو
+  const [finalPriceInputSyp, setFinalPriceInputSyp] = useState(''); // الحقل الوحيد الظاهر للمستخدم — بالليرة السورية
+
+  // تحرير بالليرة (الحقل الوحيد الظاهر): يحدّث قيمة الدولار الداخلية تلقائياً لاستخدامها في كل الحسابات
+  const handleFinalPriceSypChange = (value: string) => {
+    setFinalPriceInputSyp(value);
+    const rate = settings?.usd_to_syp_rate || 15000;
+    if (value.trim() === '') {
+      setFinalPriceInput('');
+    } else {
+      const syp = parseFloat(value) || 0;
+      setFinalPriceInput((syp / rate).toFixed(2));
+    }
+  };
+
+  const handleResetFinalPrice = () => {
+    setFinalPriceInput('');
+    setFinalPriceInputSyp('');
+  };
 
   // Payment State
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'debt' | 'partial'>('cash');
@@ -322,6 +342,7 @@ export const NewSaleView: React.FC = () => {
       setBasket([]);
       setSelectedCustomerId('');
       setFinalPriceInput('');
+      setFinalPriceInputSyp('');
       setPartialAmountPaidUsd('');
       setPaymentMethod('cash');
       setShowConfirmDialog(false);
@@ -628,14 +649,14 @@ export const NewSaleView: React.FC = () => {
                 )}
               </div>
 
-              {/* Direct final-price editor — يحسب الخصم أو الإضافة تلقائياً من الفرق مع المجموع الفرعي */}
+              {/* Direct final-price editor — بالليرة السورية فقط، يحسب الخصم أو الإضافة تلقائياً من الفرق مع المجموع الفرعي */}
               <div className="border-t border-slate-850 pt-3 space-y-2">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-slate-500">عدّل السعر النهائي مباشرة ($)</label>
+                  <label className="text-[10px] font-bold text-slate-500">عدّل السعر النهائي مباشرة (ل.س)</label>
                   {totals.hasOverride && (
                     <button
                       type="button"
-                      onClick={() => setFinalPriceInput('')}
+                      onClick={handleResetFinalPrice}
                       className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 underline decoration-dotted cursor-pointer"
                     >
                       ↺ إعادة لسعر السلة الأساسي
@@ -646,11 +667,11 @@ export const NewSaleView: React.FC = () => {
                 <div className="relative">
                   <input
                     type="number"
-                    step="0.01"
+                    step="1"
                     min="0"
-                    placeholder={totals.subtotalUsd.toFixed(2)}
-                    value={finalPriceInput}
-                    onChange={(e) => setFinalPriceInput(e.target.value)}
+                    placeholder={totals.subtotalSyp.toString()}
+                    value={finalPriceInputSyp}
+                    onChange={(e) => handleFinalPriceSypChange(e.target.value)}
                     className={`w-full text-center text-3xl font-black bg-slate-950 border rounded-xl p-3 focus:outline-none transition-colors ${
                       totals.diffUsd < -0.001
                         ? 'text-rose-400 border-rose-500/30 focus:border-rose-500'
@@ -659,19 +680,24 @@ export const NewSaleView: React.FC = () => {
                           : 'text-slate-100 border-slate-850 focus:border-indigo-500'
                     }`}
                   />
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-black">$</span>
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-xs font-black">ل.س</span>
+                </div>
+
+                {/* المعادل بالدولار للعرض فقط (غير قابل للتحرير) */}
+                <div className="text-center text-[10px] font-bold text-slate-500 font-mono">
+                  ≈ ${totals.finalUsd.toFixed(2)}
                 </div>
 
                 {/* Live feedback badge: يوضّح تلقائياً هل هذا خصم أم إضافة وبكم */}
                 {totals.diffUsd < -0.001 ? (
                   <div className="flex justify-between items-center bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2 text-[10px] font-black text-rose-400">
                     <span>🔻 خصم مُطبّق على الفاتورة</span>
-                    <span className="font-mono">-${totals.discountUsd.toFixed(2)} <span className="text-slate-500 font-bold">(-{totals.discountSyp.toLocaleString()} ل.س)</span></span>
+                    <span className="font-mono">-{totals.discountSyp.toLocaleString()} ل.س <span className="text-slate-500 font-bold">(-${totals.discountUsd.toFixed(2)})</span></span>
                   </div>
                 ) : totals.diffUsd > 0.001 ? (
                   <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2 text-[10px] font-black text-emerald-400">
                     <span>🔺 إضافة/رسوم مُطبّقة على الفاتورة</span>
-                    <span className="font-mono">+${totals.additionUsd.toFixed(2)} <span className="text-slate-500 font-bold">(+{totals.additionSyp.toLocaleString()} ل.س)</span></span>
+                    <span className="font-mono">+{totals.additionSyp.toLocaleString()} ل.س <span className="text-slate-500 font-bold">(+${totals.additionUsd.toFixed(2)})</span></span>
                   </div>
                 ) : (
                   <div className="text-center text-[9px] font-bold text-slate-600">بدون أي تعديل — السعر النهائي مطابق لمجموع السلة</div>

@@ -412,6 +412,14 @@ export function useSales() {
       const newRemainingDebtSyp = Math.round(newRemainingDebtUsd * activeRate);
       const newMethod: PaymentMethod = newRemainingDebtUsd <= 0 ? 'cash' : (paidUsd > 0 ? 'partial' : 'debt');
 
+      // إعادة احتساب الربح بناءً على السعر الجديد وتكلفة الأصناف المسجلة على الفاتورة (كان مفقوداً سابقاً)
+      const totalCostUsd = (invoice.items || []).reduce(
+        (acc: number, it: any) => acc + Number(it.quantity) * Number(it.cost_usd || 0),
+        0
+      );
+      const newProfitUsd = Math.max(0, newTotalUsd - totalCostUsd);
+      const newProfitSyp = Math.round(newProfitUsd * activeRate);
+
       const { error: updateError } = await supabase
         .from('invoices')
         .update({
@@ -420,6 +428,8 @@ export function useSales() {
           remaining_debt_usd: newRemainingDebtUsd,
           remaining_debt_syp: newRemainingDebtSyp,
           payment_method: newMethod,
+          profit_usd: newProfitUsd,
+          profit_syp: newProfitSyp,
         })
         .eq('id', invoiceId);
       if (updateError) throw updateError;
@@ -491,6 +501,13 @@ export function useSales() {
       const newPaidSyp = Math.round(newPaidUsd * activeRate);
       const newMethod: PaymentMethod = safeNewRemainingUsd <= 0 ? 'cash' : (newPaidUsd > 0 ? 'partial' : 'debt');
 
+      // إسقاط جزء من الدين يعني أن هذا المبلغ لن يُحصَّل أبداً، لذلك يجب أن يُخصم من ربح الفاتورة المسجّل
+      // (وعلى العكس: رفع الدين المتبقي يعيد ذلك المبلغ لصافي الربح المتوقع)
+      const oldProfitUsd = Number(invoice.profit_usd || 0);
+      const debtForgivenUsd = oldRemainingUsd - safeNewRemainingUsd; // موجب = إسقاط دين (يُنقص الربح)، سالب = رفع الدين (يزيد الربح)
+      const newProfitUsd = Math.max(0, oldProfitUsd - debtForgivenUsd);
+      const newProfitSyp = Math.round(newProfitUsd * activeRate);
+
       const { error: updateError } = await supabase
         .from('invoices')
         .update({
@@ -499,6 +516,8 @@ export function useSales() {
           paid_usd: newPaidUsd,
           paid_syp: newPaidSyp,
           payment_method: newMethod,
+          profit_usd: newProfitUsd,
+          profit_syp: newProfitSyp,
         })
         .eq('id', invoiceId);
       if (updateError) throw updateError;
@@ -513,9 +532,9 @@ export function useSales() {
             entity_type: 'invoice',
             entity_id: invoiceId,
             entity_name: invoice.invoice_number,
-            old_value: { remaining_debt_usd: oldRemainingUsd },
-            new_value: { remaining_debt_usd: safeNewRemainingUsd },
-            description: `تعديل يدوي على مبلغ الدين المتبقي للفاتورة ${invoice.invoice_number} من $${oldRemainingUsd.toFixed(2)} إلى $${safeNewRemainingUsd.toFixed(2)} (بدون تحصيل نقدي في الصندوق)`,
+            old_value: { remaining_debt_usd: oldRemainingUsd, profit_usd: oldProfitUsd },
+            new_value: { remaining_debt_usd: safeNewRemainingUsd, profit_usd: newProfitUsd },
+            description: `تعديل يدوي على مبلغ الدين المتبقي للفاتورة ${invoice.invoice_number} من $${oldRemainingUsd.toFixed(2)} إلى $${safeNewRemainingUsd.toFixed(2)} (بدون تحصيل نقدي في الصندوق، مع تعديل الربح المسجّل تبعاً لذلك)`,
           });
         } catch (err) {
           console.warn('Audit log failed:', err);
@@ -525,7 +544,7 @@ export function useSales() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['audit_logs'] });
-      toast.success('تم تعديل مبلغ الدين المتبقي بنجاح');
+      toast.success('تم تعديل مبلغ الدين المتبقي وتحديث الربح المسجّل بنجاح');
     },
     onError: (err: any) => {
       toast.error(`فشل تعديل الدين: ${err.message}`);

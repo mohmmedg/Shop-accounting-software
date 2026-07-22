@@ -483,10 +483,12 @@ export const CustomerAndSupplierView: React.FC = () => {
                         <div className="bg-slate-950 border border-slate-850 p-2.5 rounded-xl">
                           <span className="text-[9px] text-slate-500 block">حجم المشتريات</span>
                           <span className="text-sm font-mono text-emerald-400 mt-1 block">${Number(c.total_purchases_usd || 0).toFixed(1)}</span>
+                          <span className="text-[8px] font-mono text-slate-500 block">{Math.round(Number(c.total_purchases_usd || 0) * (settings?.usd_to_syp_rate || 15000)).toLocaleString()} ل.س</span>
                         </div>
                         <div className="bg-slate-950 border border-slate-850 p-2.5 rounded-xl">
                           <span className="text-[9px] text-slate-500 block">إجمالي الربح منه</span>
                           <span className="text-sm font-mono text-amber-400 mt-1 block">${Number(customerProfitMap[c.id]?.profitUsd || 0).toFixed(1)}</span>
+                          <span className="text-[8px] font-mono text-slate-500 block">{Math.round(Number(customerProfitMap[c.id]?.profitSyp || 0)).toLocaleString()} ل.س</span>
                         </div>
                       </div>
 
@@ -503,7 +505,10 @@ export const CustomerAndSupplierView: React.FC = () => {
                               <CreditCard className="w-3.5 h-3.5" />
                               <span>عرض البضاعة الدين المسجلة</span>
                             </span>
-                            <span className="font-mono font-black text-rose-400">${customerDebtMap[c.id].totalDebtUsd.toFixed(2)}</span>
+                            <span className="text-left">
+                              <span className="font-mono font-black text-rose-400 block">${customerDebtMap[c.id].totalDebtUsd.toFixed(2)}</span>
+                              <span className="font-mono text-[9px] text-rose-400/70 block">{customerDebtMap[c.id].totalDebtSyp.toLocaleString()} ل.س</span>
+                            </span>
                           </button>
 
                           {expandedDebtCustomerId === c.id && (
@@ -521,15 +526,19 @@ export const CustomerAndSupplierView: React.FC = () => {
                                           <Package className="w-3 h-3 text-slate-600 shrink-0" />
                                           <span className="truncate">{item.product_name}</span>
                                         </span>
-                                        <span className="font-mono shrink-0">
-                                          {Number(item.quantity).toFixed(item.is_weight ? 3 : 0)} × ${Number(item.price_usd).toFixed(2)}
+                                        <span className="font-mono shrink-0 text-left">
+                                          <span className="block">{Number(item.quantity).toFixed(item.is_weight ? 3 : 0)} × ${Number(item.price_usd).toFixed(2)}</span>
+                                          <span className="block text-[9px] text-slate-500">{Math.round(Number(item.price_syp ?? item.price_usd * (settings?.usd_to_syp_rate || 15000))).toLocaleString()} ل.س/وحدة</span>
                                         </span>
                                       </div>
                                     ))}
                                   </div>
                                   <div className="flex justify-between text-rose-400 font-black border-t border-slate-850 pt-1">
                                     <span>المتبقي على هذه الفاتورة:</span>
-                                    <span className="font-mono">${Number(inv.remaining_debt_usd).toFixed(2)}</span>
+                                    <span className="font-mono text-left">
+                                      <span className="block">${Number(inv.remaining_debt_usd).toFixed(2)}</span>
+                                      <span className="block text-[9px] font-bold text-rose-400/70">{Number(inv.remaining_debt_syp).toLocaleString()} ل.س</span>
+                                    </span>
                                   </div>
                                   <button
                                     type="button"
@@ -929,7 +938,10 @@ export const CustomerAndSupplierView: React.FC = () => {
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-900">
                         <span>مجموع الصنف:</span>
-                        <span className="font-mono text-emerald-400">${(Number(item.quantity || 0) * Number(item.price_usd || 0)).toFixed(2)}</span>
+                        <span className="font-mono text-emerald-400 text-left">
+                          <span className="block">${(Number(item.quantity || 0) * Number(item.price_usd || 0)).toFixed(2)}</span>
+                          <span className="block text-[9px] text-slate-500">{Math.round(Number(item.quantity || 0) * Number(item.price_usd || 0) * (settings?.usd_to_syp_rate || 15000)).toLocaleString()} ل.س</span>
+                        </span>
                       </div>
                     </div>
                   ))
@@ -941,7 +953,10 @@ export const CustomerAndSupplierView: React.FC = () => {
               <div className="bg-slate-950 border border-slate-850 rounded-xl p-3 space-y-1">
                 <div className="flex justify-between text-slate-400">
                   <span>المجموع الفرعي:</span>
-                  <span className="font-mono text-slate-200">${editItemsSubtotal.toFixed(2)}</span>
+                  <span className="font-mono text-slate-200 text-left">
+                    <span className="block">${editItemsSubtotal.toFixed(2)}</span>
+                    <span className="block text-[9px] text-slate-500">{Math.round(editItemsSubtotal * (settings?.usd_to_syp_rate || 15000)).toLocaleString()} ل.س</span>
+                  </span>
                 </div>
                 {Number(editingItemsInvoice.discount_usd || 0) > 0 && (
                   <div className="flex justify-between text-amber-400">
@@ -951,7 +966,10 @@ export const CustomerAndSupplierView: React.FC = () => {
                 )}
                 <div className="flex justify-between text-slate-100 font-black text-sm border-t border-slate-850 pt-1.5">
                   <span>السعر الإجمالي الجديد:</span>
-                  <span className="font-mono text-emerald-400">${editItemsTotal.toFixed(2)}</span>
+                  <span className="font-mono text-emerald-400 text-left">
+                    <span className="block">${editItemsTotal.toFixed(2)}</span>
+                    <span className="block text-[9px] font-bold text-emerald-400/70">{Math.round(editItemsTotal * (settings?.usd_to_syp_rate || 15000)).toLocaleString()} ل.س</span>
+                  </span>
                 </div>
               </div>
               <button

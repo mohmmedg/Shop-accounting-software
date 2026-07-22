@@ -468,6 +468,70 @@ export function useSales() {
     },
   });
 
+  // تعديل مباشر على "المبلغ المتبقي كدين" لفاتورة معينة — تصحيح إداري أو إسقاط جزء من الدين،
+  // بدون المساس بسعر الفاتورة الأصلي أو تسجيل أي تحصيل نقدي فعلي في الصندوق
+  const updateInvoiceDebt = useMutation({
+    mutationFn: async ({ invoiceId, newRemainingDebtUsd }: { invoiceId: string; newRemainingDebtUsd: number }) => {
+      const activeRate = settings?.usd_to_syp_rate ?? 15000;
+
+      const { data: invoice, error: fetchError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('id', invoiceId)
+        .single();
+      if (fetchError || !invoice) throw new Error('لم يتم العثور على الفاتورة');
+
+      const totalUsd = Number(invoice.total_usd);
+      const oldRemainingUsd = Number(invoice.remaining_debt_usd);
+      const safeNewRemainingUsd = Math.max(0, Math.min(newRemainingDebtUsd, totalUsd));
+      const newRemainingSyp = Math.round(safeNewRemainingUsd * activeRate);
+
+      // paid = total - remaining، حتى تبقى الفاتورة متسقة حسابياً بعد التصحيح
+      const newPaidUsd = Math.max(0, totalUsd - safeNewRemainingUsd);
+      const newPaidSyp = Math.round(newPaidUsd * activeRate);
+      const newMethod: PaymentMethod = safeNewRemainingUsd <= 0 ? 'cash' : (newPaidUsd > 0 ? 'partial' : 'debt');
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({
+          remaining_debt_usd: safeNewRemainingUsd,
+          remaining_debt_syp: newRemainingSyp,
+          paid_usd: newPaidUsd,
+          paid_syp: newPaidSyp,
+          payment_method: newMethod,
+        })
+        .eq('id', invoiceId);
+      if (updateError) throw updateError;
+
+      // Audit trail — يوضّح أن هذا تصحيح يدوي على الدين وليس دفعة نقدية فعلية
+      if (currentUser?.id) {
+        try {
+          await supabase.from('audit_logs').insert({
+            employee_id: currentUser.id,
+            employee_name: currentUser.name,
+            action_type: 'edit_invoice',
+            entity_type: 'invoice',
+            entity_id: invoiceId,
+            entity_name: invoice.invoice_number,
+            old_value: { remaining_debt_usd: oldRemainingUsd },
+            new_value: { remaining_debt_usd: safeNewRemainingUsd },
+            description: `تعديل يدوي على مبلغ الدين المتبقي للفاتورة ${invoice.invoice_number} من $${oldRemainingUsd.toFixed(2)} إلى $${safeNewRemainingUsd.toFixed(2)} (بدون تحصيل نقدي في الصندوق)`,
+          });
+        } catch (err) {
+          console.warn('Audit log failed:', err);
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['audit_logs'] });
+      toast.success('تم تعديل مبلغ الدين المتبقي بنجاح');
+    },
+    onError: (err: any) => {
+      toast.error(`فشل تعديل الدين: ${err.message}`);
+    },
+  });
+
   // Edit the actual products/items sold on an invoice — reconciles stock, totals, debt & customer/employee stats
   const updateInvoiceItems = useMutation({
     mutationFn: async ({ invoiceId, items }: { invoiceId: string; items: InvoiceLineItemInput[] }) => {
@@ -785,6 +849,8 @@ export function useSales() {
     isPayingDebt: recordDebtPayment.isPending,
     updateInvoiceTotal: updateInvoiceTotal.mutateAsync,
     isUpdatingInvoice: updateInvoiceTotal.isPending,
+    updateInvoiceDebt: updateInvoiceDebt.mutateAsync,
+    isUpdatingInvoiceDebt: updateInvoiceDebt.isPending,
     updateInvoiceItems: updateInvoiceItems.mutateAsync,
     isUpdatingInvoiceItems: updateInvoiceItems.isPending,
     deleteInvoice: deleteInvoice.mutateAsync,

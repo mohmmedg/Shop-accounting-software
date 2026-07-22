@@ -49,7 +49,7 @@ export const CustomerAndSupplierView: React.FC = () => {
     isUpdating: isUpdatingSupplier
   } = useSuppliers();
 
-  const { invoices, updateInvoiceItems, isUpdatingInvoiceItems } = useSales();
+  const { invoices, updateInvoiceItems, isUpdatingInvoiceItems, updateInvoiceDebt, isUpdatingInvoiceDebt } = useSales();
   const { products } = useProducts();
   const { settings } = useSettings();
 
@@ -60,6 +60,10 @@ export const CustomerAndSupplierView: React.FC = () => {
   const [editingItemsInvoice, setEditingItemsInvoice] = useState<any | null>(null);
   const [editItemsList, setEditItemsList] = useState<any[]>([]);
   const [itemsProductSearch, setItemsProductSearch] = useState('');
+
+  // Editing the full remaining debt amount directly (manual correction / write-off)
+  const [editingDebtInvoice, setEditingDebtInvoice] = useState<any | null>(null);
+  const [editDebtAmountUsd, setEditDebtAmountUsd] = useState('');
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<'customers' | 'suppliers'>('customers');
@@ -219,6 +223,30 @@ export const CustomerAndSupplierView: React.FC = () => {
     try {
       await updateInvoiceItems({ invoiceId: editingItemsInvoice.id, items: editItemsList });
       setEditingItemsInvoice(null);
+    } catch (err) {}
+  };
+
+  // --- تعديل مباشر على مبلغ الدين المتبقي (تصحيح إداري / إسقاط جزء من الدين) ---
+  const handleOpenEditDebtAmount = (inv: any) => {
+    setEditingDebtInvoice(inv);
+    setEditDebtAmountUsd(Number(inv.remaining_debt_usd).toString());
+  };
+
+  const handleSaveEditedDebtAmount = async () => {
+    if (isUpdatingInvoiceDebt) return; // منع الإرسال المزدوج
+    if (!editingDebtInvoice) return;
+    const newAmount = parseFloat(editDebtAmountUsd);
+    if (isNaN(newAmount) || newAmount < 0) {
+      toast.error('الرجاء إدخال قيمة صحيحة لمبلغ الدين');
+      return;
+    }
+    if (newAmount > Number(editingDebtInvoice.total_usd)) {
+      toast.error('لا يمكن أن يتجاوز الدين المتبقي السعر الإجمالي للفاتورة');
+      return;
+    }
+    try {
+      await updateInvoiceDebt({ invoiceId: editingDebtInvoice.id, newRemainingDebtUsd: newAmount });
+      setEditingDebtInvoice(null);
     } catch (err) {}
   };
 
@@ -540,14 +568,24 @@ export const CustomerAndSupplierView: React.FC = () => {
                                       <span className="block text-[9px] font-bold text-rose-400/70">{Number(inv.remaining_debt_syp).toLocaleString()} ل.س</span>
                                     </span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditDebtItems(inv)}
-                                    className="w-full flex items-center justify-center gap-1.5 bg-slate-900 hover:border-indigo-700 text-indigo-400 border border-slate-800 rounded-lg py-1.5 mt-1 cursor-pointer transition"
-                                  >
-                                    <Edit2 className="w-3 h-3" />
-                                    <span>تعديل منتجات هذه الفاتورة</span>
-                                  </button>
+                                  <div className="grid grid-cols-2 gap-1.5 mt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditDebtItems(inv)}
+                                      className="flex items-center justify-center gap-1.5 bg-slate-900 hover:border-indigo-700 text-indigo-400 border border-slate-800 rounded-lg py-1.5 cursor-pointer transition"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                      <span>تعديل المنتجات</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditDebtAmount(inv)}
+                                      className="flex items-center justify-center gap-1.5 bg-slate-900 hover:border-amber-700 text-amber-400 border border-slate-800 rounded-lg py-1.5 cursor-pointer transition"
+                                    >
+                                      <CreditCard className="w-3 h-3" />
+                                      <span>تعديل مبلغ الدين</span>
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -981,6 +1019,56 @@ export const CustomerAndSupplierView: React.FC = () => {
                 {isUpdatingInvoiceItems ? 'جاري حفظ التعديلات...' : 'حفظ التعديلات على المنتجات'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Remaining Debt Amount Modal */}
+      {editingDebtInvoice && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4" id="debt-amount-edit-modal" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-right space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <button onClick={() => setEditingDebtInvoice(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="font-black text-sm text-slate-100 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-amber-400" />
+                <span>تعديل مبلغ الدين المتبقي</span>
+              </h3>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-1 text-xs font-bold text-slate-300">
+              <p>الفاتورة: <span className="text-indigo-400 font-mono">{editingDebtInvoice.invoice_number}</span></p>
+              <p>السعر الإجمالي للفاتورة: <span className="text-slate-100 font-mono">${Number(editingDebtInvoice.total_usd).toFixed(2)}</span></p>
+              <p>الدين المتبقي الحالي: <span className="text-rose-400 font-mono font-black">${Number(editingDebtInvoice.remaining_debt_usd).toFixed(2)}</span></p>
+            </div>
+
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-[10px] font-bold text-amber-400 leading-relaxed">
+              ⚠️ هذا تصحيح إداري مباشر على مبلغ الدين (مثل إسقاط جزء منه أو تصحيح خطأ)، ولا يسجّل أي مبلغ محصّل فعلياً في صندوق الكاش.
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-slate-400 text-xs font-bold">مبلغ الدين المتبقي الجديد ($):</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                max={Number(editingDebtInvoice.total_usd)}
+                value={editDebtAmountUsd}
+                onChange={(e) => setEditDebtAmountUsd(e.target.value)}
+                className="w-full text-center text-3xl font-black text-slate-100 bg-slate-950 border border-slate-850 rounded-xl p-3 focus:outline-none focus:border-amber-500"
+                autoFocus
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveEditedDebtAmount}
+              disabled={isUpdatingInvoiceDebt}
+              className="w-full bg-amber-600 hover:bg-amber-550 text-white font-black py-3 rounded-xl shadow-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isUpdatingInvoiceDebt ? 'جاري الحفظ...' : 'حفظ مبلغ الدين الجديد'}
+            </button>
           </div>
         </div>
       )}

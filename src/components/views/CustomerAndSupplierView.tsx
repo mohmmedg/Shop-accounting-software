@@ -131,15 +131,24 @@ export const CustomerAndSupplierView: React.FC = () => {
   }, [invoices]);
 
   // إجمالي الربح المتحقق من كل عميل عبر كل فواتيره (وليس فقط فواتير الدين)
+  // profitUsd/profitSyp = الربح الكامل على أساس البيع (بافتراض تحصيل كامل الفواتير)
+  // realizedProfitUsd/Syp = الربح المحصَّل فعلياً بالكاش لحد الآن، بنسبة ما تم تحصيله من كل فاتورة
   const customerProfitMap = useMemo(() => {
-    const map: Record<string, { profitUsd: number; profitSyp: number }> = {};
+    const map: Record<string, { profitUsd: number; profitSyp: number; realizedProfitUsd: number; realizedProfitSyp: number }> = {};
     invoices.forEach(inv => {
       if (!inv.customer_id) return;
       if (!map[inv.customer_id]) {
-        map[inv.customer_id] = { profitUsd: 0, profitSyp: 0 };
+        map[inv.customer_id] = { profitUsd: 0, profitSyp: 0, realizedProfitUsd: 0, realizedProfitSyp: 0 };
       }
-      map[inv.customer_id].profitUsd += Number(inv.profit_usd || 0);
-      map[inv.customer_id].profitSyp += Number(inv.profit_syp || 0);
+      const totalUsd = Number(inv.total_usd || 0);
+      const profitUsd = Number(inv.profit_usd || 0);
+      const profitSyp = Number(inv.profit_syp || 0);
+      const paidRatio = totalUsd > 0 ? Math.min(1, Number(inv.paid_usd || 0) / totalUsd) : 1;
+
+      map[inv.customer_id].profitUsd += profitUsd;
+      map[inv.customer_id].profitSyp += profitSyp;
+      map[inv.customer_id].realizedProfitUsd += profitUsd * paidRatio;
+      map[inv.customer_id].realizedProfitSyp += profitSyp * paidRatio;
     });
     return map;
   }, [invoices]);
@@ -503,7 +512,7 @@ export const CustomerAndSupplierView: React.FC = () => {
                       </div>
 
                       {/* Loyalty info */}
-                      <div className="grid grid-cols-3 gap-2 text-center pt-1 font-black">
+                      <div className="grid grid-cols-2 gap-2 text-center pt-1 font-black">
                         <div className="bg-slate-950 border border-slate-850 p-2.5 rounded-xl">
                           <span className="text-[9px] text-slate-500 block">نقاط الولاء</span>
                           <span className="text-sm font-mono text-indigo-400 mt-1 block">{c.loyalty_points || 0} نقطة</span>
@@ -513,10 +522,19 @@ export const CustomerAndSupplierView: React.FC = () => {
                           <span className="text-sm font-mono text-emerald-400 mt-1 block">${Number(c.total_purchases_usd || 0).toFixed(1)}</span>
                           <span className="text-[8px] font-mono text-slate-500 block">{Math.round(Number(c.total_purchases_usd || 0) * (settings?.usd_to_syp_rate || 15000)).toLocaleString()} ل.س</span>
                         </div>
-                        <div className="bg-slate-950 border border-slate-850 p-2.5 rounded-xl">
-                          <span className="text-[9px] text-slate-500 block">إجمالي الربح منه</span>
+                      </div>
+
+                      {/* Profit comparison: accrual (assumes full collection) vs realized (actual cash collected so far) */}
+                      <div className="grid grid-cols-2 gap-2 text-center font-black">
+                        <div className="bg-slate-950 border border-amber-500/20 p-2.5 rounded-xl">
+                          <span className="text-[9px] text-slate-500 block">الربح الكامل (لو تحصّل الدين)</span>
                           <span className="text-sm font-mono text-amber-400 mt-1 block">${Number(customerProfitMap[c.id]?.profitUsd || 0).toFixed(1)}</span>
                           <span className="text-[8px] font-mono text-slate-500 block">{Math.round(Number(customerProfitMap[c.id]?.profitSyp || 0)).toLocaleString()} ل.س</span>
+                        </div>
+                        <div className="bg-slate-950 border border-emerald-500/20 p-2.5 rounded-xl">
+                          <span className="text-[9px] text-slate-500 block">الربح المحصَّل نقداً فعلياً</span>
+                          <span className="text-sm font-mono text-emerald-400 mt-1 block">${Number(customerProfitMap[c.id]?.realizedProfitUsd || 0).toFixed(1)}</span>
+                          <span className="text-[8px] font-mono text-slate-500 block">{Math.round(Number(customerProfitMap[c.id]?.realizedProfitSyp || 0)).toLocaleString()} ل.س</span>
                         </div>
                       </div>
 
